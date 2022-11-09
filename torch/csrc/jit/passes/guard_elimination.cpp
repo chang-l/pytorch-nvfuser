@@ -337,6 +337,7 @@ struct GuardElimination {
       case aten::log10:
       case aten::frac:
       case aten::lerp:
+      case aten::index_select:
       case aten::lgamma:
       case aten::reciprocal:
       case aten::addcmul:

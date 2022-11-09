@@ -392,6 +392,8 @@ class TORCH_CUDA_CU_API ComputeAtRootDomainMapBuilder
   //! Do not map reduction IterDomains in inputs.
   void mapPointwiseOrReductionOp(Expr* e);
 
+  void mapIndexSelectOp(Expr* e);
+
   using BackwardVisitor::handle;
 
   void handle(Expr* e) override;
@@ -409,6 +411,10 @@ class TORCH_CUDA_CU_API ComputeAtRootDomainMapBuilder
   }
 
   void handle(RNGOp* top) override;
+
+  void handle(IndexSelectOp* top) override {
+    mapIndexSelectOp(top);
+  }
 
   void handle(ReductionOp* op) override {
     mapPointwiseOrReductionOp(op);

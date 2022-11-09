@@ -192,6 +192,24 @@ void IndexLowering::handle(const TernaryOp* top) {
   GpuLower::current()->propagateExprInfo(top, back());
 }
 
+void IndexLowering::handle(const IndexSelectOp* top) {
+  TORCH_CHECK(
+      top->in1()->isA<TensorView>(),
+      "index select's first input must be TensorView");
+  TORCH_CHECK(
+      top->in1()->as<TensorView>()->domain() != nullptr,
+      "index select's first input's domian is nullptr");
+  auto lookup_extent = top->in1()->as<TensorView>()->domain()->lookupExtent();
+  const auto in1 = lowerSrcIndex(top->in1(), top->out());
+  const auto in2 = top->in2();
+  const auto in3 = lowerSrcIndex(top->in3(), top->out());
+  const auto out = lowerDstIndex(top->out());
+
+  pushBack(IrBuilder::create<IndexSelectOp>(
+      top->getIndexSelectOpType(), out, in1, in2, in3, lookup_extent));
+  GpuLower::current()->propagateExprInfo(top, back());
+}
+
 void IndexLowering::handle(const ViewAsScalar* uop) {
   const auto in = lowerSrcIndex(uop->in(), uop->out());
   const auto out = lowerDstIndex(uop->out());

@@ -282,6 +282,23 @@ struct SubstituteInExpr : public OptInDispatch {
         rng_expr->getPhiloxIndex());
   }
 
+  void handle(IndexSelectOp* idx_sel_expr) final {
+    auto in1 = reference_->sameAs(idx_sel_expr->in1()) ? substitute_
+                                                       : idx_sel_expr->in1();
+    int in2 = idx_sel_expr->in2();
+    auto in3 = reference_->sameAs(idx_sel_expr->in3()) ? substitute_
+                                                       : idx_sel_expr->in3();
+    auto out = reference_->sameAs(idx_sel_expr->out()) ? substitute_
+                                                       : idx_sel_expr->out();
+    expr_ = IrBuilder::create<IndexSelectOp>(
+        idx_sel_expr->container(),
+        idx_sel_expr->getIndexSelectOpType(),
+        out,
+        in1,
+        in2,
+        in3);
+  }
+
   void handle(ReductionOp* reduction_expr) final {
     auto init = reference_->sameAs(reduction_expr->init())
         ? substitute_
@@ -765,6 +782,32 @@ std::vector<Expr*> getReductionOps(Fusion* fusion) {
   }
 
   return red_ops;
+}
+
+std::vector<Expr*> getIndexSelectOps(Fusion* fusion) {
+  std::vector<Expr*> idx_sel_ops;
+
+  auto isIndexSelect = [](Val* in_val) {
+    if (in_val == nullptr || !in_val->isA<TensorView>()) {
+      return false;
+    }
+    auto in_tv = in_val->as<TensorView>();
+    return std::any_of(
+        in_tv->getRootDomain().begin(),
+        in_tv->getRootDomain().end(),
+        [](IterDomain* id) { return id->isLookupIterType(); });
+  };
+
+  for (auto expr : fusion->exprs()) {
+    bool is_idx_sel = false;
+    if (expr->isA<IndexSelectOp>()) {
+      is_idx_sel = isIndexSelect(expr->as<IndexSelectOp>()->in1());
+    }
+    if (is_idx_sel) {
+      idx_sel_ops.push_back(expr);
+    }
+  }
+  return idx_sel_ops;
 }
 
 namespace {

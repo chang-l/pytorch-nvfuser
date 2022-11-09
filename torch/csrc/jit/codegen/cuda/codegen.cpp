@@ -1038,6 +1038,84 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     }
   }
 
+  // (1 * tv.extent[dim] * tv.extent[dim + 1] * ... * tv.extent[rank - 1])
+  std::string genMulExtString(
+      const TensorView* tv,
+      const int dim,
+      const int rank,
+      const int lookup_dim = -1,
+      const Val* lookup_extent = nullptr) {
+    std::stringstream s;
+    s << "(1";
+    for (int idx = dim; idx < rank; ++idx) {
+      if (lookup_dim == idx) {
+        TORCH_CHECK(
+            lookup_extent->isA<NamedScalar>(),
+            "lookup_extent type must be NamedScalar");
+        s << " * " << lookup_extent->as<NamedScalar>()->toString();
+      } else {
+        s << " * " << tv->getRootDomain()[idx]->extent()->toString();
+      }
+    }
+    s << ")";
+    return s.str();
+  }
+
+  // TODO(Feiwen): move lower index logic to lower_index.cpp
+  void handle(const IndexSelectOp* top) final {
+    auto lookup_var = varName(top->in1()->as<kir::TensorIndex>()->view());
+    int dim = top->in2();
+    auto idx_var = gen(top->in3());
+    const auto in1_view = top->in1()->as<kir::TensorIndex>()->view();
+    int rank = in1_view->getRootDomain().size();
+    const auto out_view = top->out()->as<kir::TensorIndex>()->view();
+    const auto lookup_extent = top->lookup_extent();
+
+    // calc gtid
+    std::stringstream ss;
+    ss << "(" << gen(top->in1()->as<kir::TensorIndex>()->index(0));
+    for (int i = 1; i < top->in1()->as<kir::TensorIndex>()->nDims(); ++i) {
+      ss << " + " << gen(top->in1()->as<kir::TensorIndex>()->index(i));
+    }
+    ss << ")";
+
+    // calc base addr
+    std::string base = "";
+    if (dim > 0) {
+      std::string lut_exts =
+          genMulExtString(in1_view, dim, rank, dim, lookup_extent);
+      std::string out_exts = genMulExtString(out_view, dim, rank);
+      base = "(" + ss.str() + " / " + out_exts + ") * " + lut_exts + " + ";
+    }
+
+    // calc index offset
+    TORCH_CHECK(
+        rank > 1, "input_0 of IndexSelectOp must be > 1, but gets", rank);
+    std::string extents = genMulExtString(in1_view, dim + 1, rank);
+    std::string idx_offset = idx_var + " * " + extents;
+
+    // calc feat offset
+    std::string feat_offset = ss.str() + " % " + extents;
+
+    // generate code
+    if (!print_inline_) {
+      indent() << gen(top->out());
+      if (!top->out()->isScalar()) {
+        code_ << "\n";
+        indent() << kTab;
+      }
+      code_ << " = ";
+    }
+
+    code_ << lookup_var << "[" << base << idx_offset << " + " << feat_offset
+          << "]"
+          << ";\n";
+
+    // if (!print_inline_) {
+    // code_ << ";\n";
+    // }
+  }
+
   std::string genArchString(MmaOptions::MacroType macro) {
     std::stringstream ss;
     if (isVolta(macro)) {
@@ -2292,12 +2370,13 @@ class CudaKernelGenerator : private OptOutConstDispatch {
         ReductionParallelTypeState::Inactive);
 
     for (const ParallelType pt : kParallelTypeThreads) {
-      // It may be better to predicate grid reductions on dimensions they don't
-      // actively use, however since that should generally be discouraged (they
-      // should be part of the iter portion of the operation, or they should be
-      // predciated out) we're just going to assume they're part of the iter
-      // dimension. This would cause more communication than strictly necessary
-      // but should not be a common use case.
+      // It may be better to predicate grid reductions on dimensions they
+      // don't actively use, however since that should generally be
+      // discouraged (they should be part of the iter portion of the
+      // operation, or they should be predciated out) we're just going to
+      // assume they're part of the iter dimension. This would cause more
+      // communication than strictly necessary but should not be a common use
+      // case.
       auto pt_dim = kernel_->summary().parallel_dimension_map_.get(pt);
       if (pt_dim == nullptr || pt_dim->isOneInt()) {
         continue;
@@ -2455,12 +2534,13 @@ class CudaKernelGenerator : private OptOutConstDispatch {
       code_ << " = " << gen_start << "; ";
     } else {
       // Do not start at  the start of the ID when not parallelized. Instead,
-      // start at 0. Predicates will protect buffers between 0 and ID->start(),
-      // however if we started at ID->start and extent == ID->start, we could
-      // have a "degenerate" loop (loop with no iterations). It may not be an
-      // issue to have a 0-sized loop, but all potential consequences haven't
-      // been covered. One example is WAR analysis which could incorrectly think
-      // a barrier inside a 0-sized loop actually provides protection.
+      // start at 0. Predicates will protect buffers between 0 and
+      // ID->start(), however if we started at ID->start and extent ==
+      // ID->start, we could have a "degenerate" loop (loop with no
+      // iterations). It may not be an issue to have a 0-sized loop, but all
+      // potential consequences haven't been covered. One example is WAR
+      // analysis which could incorrectly think a barrier inside a 0-sized
+      // loop actually provides protection.
       code_ << " = 0; ";
     }
     code_ << gen_index << " < " << gen_stop << "; " << step_code.str() << ") ";

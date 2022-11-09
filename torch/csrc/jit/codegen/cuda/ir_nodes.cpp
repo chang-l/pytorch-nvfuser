@@ -555,6 +555,53 @@ bool RNGOp::sameAs(const Statement* other) const {
   return Expr::sameAs(other);
 }
 
+//
+IndexSelectOp::IndexSelectOp(
+    IrBuilderPasskey passkey,
+    IndexSelectOpType type,
+    Val* out,
+    Val* in1,
+    int dim,
+    Val* in3,
+    Val* lookup_ext)
+    : Expr(passkey, ExprType::IndexSelectOp),
+      index_select_op_type_{type},
+      out_{out},
+      in1_{in1},
+      in2_{dim},
+      in3_{in3},
+      lookup_ext_{lookup_ext} {
+  addOutput(out);
+  addInput(in1);
+  addInput(in3);
+
+  if (in1_->isA<TensorView>()) {
+    in1_->as<TensorView>()->setAsLookupTV(dim);
+  }
+}
+
+IndexSelectOp::IndexSelectOp(const IndexSelectOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      index_select_op_type_(src->index_select_op_type_),
+      out_(ir_cloner->clone(src->out_)),
+      in1_(ir_cloner->clone(src->in1_)),
+      in2_(src->in2_),
+      in3_(ir_cloner->clone(src->in3_)) {}
+
+bool IndexSelectOp::sameAs(const Statement* other) const {
+  if (this == other) {
+    return true;
+  }
+  if (!other->isA<IndexSelectOp>()) {
+    return false;
+  }
+  const auto other_op = other->as<IndexSelectOp>();
+  if (getIndexSelectOpType() != other_op->getIndexSelectOpType())
+    return false;
+  return Expr::sameAs(other);
+}
+//
+
 BroadcastOp::BroadcastOp(
     IrBuilderPasskey passkey,
     Val* out,
@@ -2303,6 +2350,31 @@ bool TensorDomain::hasBroadcast() const {
 
 bool TensorDomain::hasRFactor() const {
   return !rfactor_domain_.empty();
+}
+
+bool TensorDomain::hasLookup() const {
+  return hasLookupInDomain() || hasLookupInRootDomain() ||
+      hasLookupInRootDomain();
+}
+
+bool TensorDomain::hasLookupInDomain() const {
+  return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
+    return id->isLookupIterType();
+  });
+}
+
+bool TensorDomain::hasLookupInRootDomain() const {
+  return std::any_of(
+      root_domain_.begin(), root_domain_.end(), [](IterDomain* id) {
+        return id->isLookupIterType();
+      });
+}
+
+bool TensorDomain::hasLookupInRfactorDomain() const {
+  return std::any_of(
+      rfactor_domain_.begin(), rfactor_domain_.end(), [](IterDomain* id) {
+        return id->isLookupIterType();
+      });
 }
 
 bool TensorDomain::hasViewLikeRFactor() const {

@@ -93,6 +93,7 @@ set(JIT_TEST_SRCS
   ${JIT_TEST_ROOT}/test_jit_logging_levels.cpp
   ${JIT_TEST_ROOT}/test_file_format.cpp
   ${JIT_TEST_ROOT}/test_flatbuffer.cpp
+  ${JIT_TEST_ROOT}/test_index_select.cpp
 )
 
 if(USE_CUDA)

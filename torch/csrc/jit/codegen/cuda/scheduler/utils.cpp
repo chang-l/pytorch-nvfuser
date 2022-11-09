@@ -975,6 +975,10 @@ std::vector<TensorView*> cacheInputs(Fusion* fusion, bool unroll) {
     if (tv->uses().empty() || tv->isFusionOutput()) {
       continue;
     }
+    // skip lookup tv to avoid prefetch
+    if (tv->isLookupTV()) {
+      continue;
+    }
     auto cached_tv = tv->cacheAfter();
     cached_inputs.emplace_back(cached_tv);
   }
@@ -1316,6 +1320,11 @@ std::vector<TensorView*> getInputsOutputsWithInnerDim(
 
   for (auto input_tv :
        ir_utils::filterByType<TensorView>(reference_tv->fusion()->inputs())) {
+    // for index_select(lookup_tv, dim, index_tv) op
+    // ignore it's lookup_tv as vectorizable_tensor.
+    if (input_tv->isLookupTV()) {
+      continue;
+    }
     if (hasInnerDim(input_tv, vectorizable_dims, vectorize_pass)) {
       vectorizable_tensors.push_back(input_tv);
     }

@@ -40,6 +40,7 @@ class UnaryOp;
 class BinaryOp;
 class TernaryOp;
 class RNGOp;
+class IndexSelectOp;
 class ReductionOp;
 class WelfordOp;
 class BroadcastOp;

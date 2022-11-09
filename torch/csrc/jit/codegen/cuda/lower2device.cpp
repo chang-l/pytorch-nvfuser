@@ -202,7 +202,6 @@ void GpuLower::lower(Fusion* fusion, DataType index_type) {
   TORCH_INTERNAL_ASSERT(fusion != nullptr);
   TORCH_INTERNAL_ASSERT(
       active_gpu_lower == nullptr, "Nested lowering passes are not supported");
-
   struct LowerGuard {
     LowerGuard(GpuLower* gpu_lower) {
       active_gpu_lower = gpu_lower;
@@ -226,14 +225,39 @@ void GpuLower::lower(Fusion* fusion, DataType index_type) {
 
   FusionGuard fg(fusion_);
   // prepare for lowering
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateIr:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validateIr(fusion_);
 
   // Checks if any TIDx dim is marked as padded to a warp. Also checks if we can
   // determine the padding is explicitly a single warp.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before collectPaddedParallelDims:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   collectPaddedParallelDims();
 
   // Replaces integers that are tensor sizes by named scalars as "T0.size[0]"
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before replaceSymbolicSizes:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   replaceSymbolicSizes(fusion_);
+
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before compute_at_map_.build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
 
   // Build what's refered to as the compute at map. This map contains the
   // mappings of all iteration domains across the fusion. There are three types
@@ -244,71 +268,181 @@ void GpuLower::lower(Fusion* fusion, DataType index_type) {
   if (isDebugDumpEnabled(DebugDumpOption::ComputeAtMap)) {
     std::cout << compute_at_map_->toString() << std::endl;
   }
-
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateAndPropagatePType:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   compute_at_map_->validateAndPropagatePType();
 
   // Uses compute_at_map, find all splits that are enforced to be divisible
   divisible_splits_ = getAllDivisibleSplits(fusion_, compute_at_map_.get());
 
   // Used in parallel dimension map
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before concretized_broadcast_domains_.build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
+
   concretized_broadcast_domains_ =
       std::make_shared<const ConcretizedBroadcastDomains>(fusion_);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before parallelDimensionMap().build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   parallelDimensionMap().build(fusion_);
+
   if (isDebugDumpEnabled(DebugDumpOption::ParallelDimensions)) {
     std::cout << "Parallel dimension map:" << std::endl;
     std::cout << parallel_dimension_map_.toString() << std::endl;
   }
 
   // Validate mma data format and compatibility if any on the fusion.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateMma:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validateMma(fusion_);
 
   // Validate swizzle usage on the fusion schedule.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateSwizzle:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validateSwizzle(fusion_);
 
   // Compute thread predicates. Depends on parallel_dimension_map_
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before thread_pred_map_.build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   thread_pred_map_.build(fusion_);
 
   // Fuse cetain patterns of reductions, such as a grid reduction
   // followed by a grid broadcast. Only depends on parallelization and
   // thread predicate map.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before fuseReductionsAndBroadcasts:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   fuseReductionsAndBroadcasts(fusion_);
 
   // Scan the whole fusion and build mappings about halo extensions of
   // all IterDomains
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before haloInfo().build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   halo_info_ = std::make_shared<HaloInfo>(fusion_, compute_at_map_);
 
   // Want to run this after parallel map and halo info map are
   // created. vectorized_accesses_ and vectorized_set_info_ are filled.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateAndCollectVectorizeInfo:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validateAndCollectVectorizeInfo(fusion_);
 
   // Depends on ComputeAtMap and HaloInfo.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateAndConvertIterDomainGrouping:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validateAndConvertIterDomainGrouping(fusion_);
 
   // Assumes all grouped reductions are convered to
   // GroupedReductionOp, which is done by
   // validateAndConvertIterDomainGrouping
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validateGroupedReductions:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validateGroupedReductions(fusion_);
 
   // Depends on thread_pred_map_, validates parallelization collects which
   // tensor views need WAR or RAW syncs
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before sync_map_.build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   sync_map_ = std::make_shared<const SyncMap>(fusion_);
   if (isDebugDumpEnabled(DebugDumpOption::SyncMap)) {
     std::cout << sync_map_->toString() << std::endl;
   }
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before partialSplitMap().build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   partialSplitMap().build(fusion_);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before validatePartialSplit:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   validatePartialSplit(fusion_);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before nonDivisibleSplitInfo().build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   nonDivisibleSplitInfo().build(fusion_);
 
   // Detects all exprssions that don't need predicates. Depends on
   // nonDivisibleSplitInfo.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before predicateElimination().build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   predicateElimination().build(fusion_);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before doubleBufferInfo().build:" << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   doubleBufferInfo().build(fusion_);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before compute_at_map_->allocateIndexVariables():"
+              << std::endl;
+    for (auto exp : fusion_->exprs()) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   compute_at_map_->allocateIndexVariables();
   // Run our passes keeping the lowered expressions and forwarding
   // them
@@ -319,63 +453,165 @@ void GpuLower::lower(Fusion* fusion, DataType index_type) {
 
   // Generate loop-nests and place each expression at its
   // corresponding loop
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before LoopNestGenerator::loweredExprs:" << std::endl;
+    for (auto exp : exprs_sorted) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_lowered = LoopNestGenerator::loweredExprs(exprs_sorted);
 
   // Replace trivial reductions, Transpose, Shift, Gather, and View ops with
   // unary ops since they're not separately processed in lowering.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before unarySetOpInserter:" << std::endl;
+    for (auto exp : exprs_lowered) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_unary_replaced = unarySetOpInserter(exprs_lowered);
 
   // Insert allocations
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before insertAllocations:" << std::endl;
+    for (auto exp : exprs_unary_replaced) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_alloced = insertAllocations(exprs_unary_replaced);
 
   // Insert read after write smem syncs
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before insertRawThreadSynchronization:" << std::endl;
+    for (auto exp : exprs_alloced) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_raw_sync = insertRawThreadSynchronization(exprs_alloced);
 
   // Reuse memory locations
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before reuseMemoryAllocations:" << std::endl;
+    for (auto exp : exprs_raw_sync) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_reuse_mem = reuseMemoryAllocations(exprs_raw_sync);
 
   // Insert SyncThreads at end of for-loop to avoid WAR race condition
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before insertWarThreadSynchronization:" << std::endl;
+    for (auto exp : exprs_reuse_mem) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_war_sync = insertWarThreadSynchronization(exprs_reuse_mem);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before DoubleBufferPass::run:" << std::endl;
+    for (auto exp : exprs_war_sync) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_double_buffered = DoubleBufferPass::run(exprs_war_sync);
 
   // This pass inserts predicates as well as branches in the code. Up until now
   // the code is explicitly single shot for loop based. Need to be careful in
   // later passes when doing any kind of insertions in loop nest structure as
   // insertions could be on if then or else instead of directly on a for loop.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before UnrollPass::runPass:" << std::endl;
+    for (auto exp : exprs_double_buffered) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_unrolled_loops =
       UnrollPass::runPass(fusion_, exprs_double_buffered);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before processMisalignedVectorization:" << std::endl;
+    for (auto exp : exprs_unrolled_loops) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_unrolled_mv_loops =
       processMisalignedVectorization(exprs_unrolled_loops);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before IndexLowering::getIndexedExprs:" << std::endl;
+    for (auto exp : exprs_unrolled_mv_loops) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_indexed_loops =
       IndexLowering::getIndexedExprs(exprs_unrolled_mv_loops);
 
   // TODO: It seems this type of optimization would be far easier to implement
   // on fusion ir than kernel ir. We should likely refactor this to at least run
   // before allocation insertion.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before fuseWarpReduce:" << std::endl;
+    for (auto exp : exprs_indexed_loops) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_with_fused_broadcast = fuseWarpReduce(exprs_indexed_loops);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before generateConditionalFromPredicate:" << std::endl;
+    for (auto exp : exprs_with_fused_broadcast) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_conditional_loops =
       generateConditionalFromPredicate(exprs_with_fused_broadcast);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before allocateCommonIndices:" << std::endl;
+    for (auto exp : exprs_conditional_loops) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_common_index_allocated =
       allocateCommonIndices(exprs_conditional_loops);
 
   // Insert fake zero updates to make sure nvrtc doesn't blow out register use
   // on index and predicate reuse
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before insertMagicZero:" << std::endl;
+    for (auto exp : exprs_common_index_allocated) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_register_adjusted =
       insertMagicZero(exprs_common_index_allocated);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before KIRCleaner::cleanUp:" << std::endl;
+    for (auto exp : exprs_register_adjusted) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_cleaned_up_loops =
       KIRCleaner::cleanUp(exprs_register_adjusted);
 
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before instrumentKernel:" << std::endl;
+    for (auto exp : exprs_cleaned_up_loops) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   const auto exprs_instrumented = instrumentKernel(exprs_cleaned_up_loops);
 
   // We now have the lowered expressions, finalize the kernel IR. This function
   // will also copy over some relevant information for code generation from
   // GpuLower.
+  if (isDebugDumpEnabled(DebugDumpOption::PassTransform)) {
+    std::cout << "Before kernel_->finalize:" << std::endl;
+    for (auto exp : exprs_instrumented) {
+      std::cout << exp->toString() << std::endl;
+    }
+  }
   kernel_->finalize(exprs_instrumented);
 }
 

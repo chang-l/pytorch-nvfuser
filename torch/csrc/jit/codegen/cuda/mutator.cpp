@@ -106,6 +106,11 @@ void OptOutMutator::mutate(TensorDomain* td) {
 
   Val* mutated_val = IrBuilder::create<TensorDomain>(
       td->container(), root_dom, rfactor_dom, domain, td->contiguity());
+  // if original TensorDomain contains lookup_extent, copy to new TensorDomain
+  // it is for index select
+  if (td->lookupExtent() != nullptr) {
+    mutated_val->as<TensorDomain>()->setLookupExtent(td->lookupExtent());
+  }
   registerMutation(td, mutated_val);
 }
 
@@ -243,6 +248,21 @@ void OptOutMutator::mutate(RNGOp* rop) {
       mutated_parameters,
       rop->getRNGOffset(),
       philox_idx);
+}
+
+void OptOutMutator::mutate(IndexSelectOp* top) {
+  Val* out = maybeMutated(top->out());
+  Val* in1 = maybeMutated(top->in1());
+  Val* in3 = maybeMutated(top->in3());
+  if (out == top->out() && in1 == top->in1() && in3 == top->in3()) {
+    return;
+  }
+
+  auto container = top->container();
+  auto top_type = top->getIndexSelectOpType();
+  container->removeExpr(top);
+  IrBuilder::create<IndexSelectOp>(
+      container, top_type, out, in1, top->in2(), in3);
 }
 
 void OptOutMutator::mutate(ReductionOp* rop) {

@@ -523,6 +523,19 @@ class NaiveTypePropagator {
         copyScalarTypeAndDeviceToOutput(in_type, node);
         break;
       }
+      case aten::index_select: {
+        TypePromotionConfig config = TypePromotion::default_op_config;
+        auto input = node->input(0)->type();
+        auto dim = node->input(1)->type();
+        auto idx = node->input(2)->type();
+        auto input_tensor_type = input->cast<TensorType>();
+        auto idx_tensor_type = idx->cast<TensorType>();
+
+        auto ptr = input_tensor_type;
+        copyScalarTypeAndDeviceToOutput(
+        computeTypes(config, {input, dim, idx}), *ptr->device(), node);
+        break;
+      }
       case aten::_autocast_to_full_precision: {
         const auto in_type = node->input(0)->type()->cast<TensorType>();
         TORCH_CHECK(

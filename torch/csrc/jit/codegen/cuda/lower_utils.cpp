@@ -124,6 +124,7 @@ bool isTvOp(const Expr* expr) {
        expr->getExprType().value() == ExprType::FullOp ||
        expr->getExprType().value() == ExprType::ARangeOp ||
        expr->getExprType().value() == ExprType::EyeOp ||
+       expr->getExprType().value() == ExprType::IndexSelectOp ||
        expr->getExprType().value() == ExprType::ReductionOp ||
        expr->getExprType().value() == ExprType::GroupedReductionOp ||
        expr->getExprType().value() == ExprType::WelfordOp ||
@@ -472,6 +473,19 @@ class ReplaceExprInput : private kir::ExprMutator {
   void handle(RNGOp* node) final {
     // RNGOp has no input
     return;
+  }
+
+  void handle(IndexSelectOp* node) final {
+    auto replaced_inputs = getMaybeInputReplacementMap(node);
+    if (replaced_inputs.has_value()) {
+      auto replacement = IrBuilder::create<IndexSelectOp>(
+          node->getIndexSelectOpType(),
+          node->out(),
+          replaced_inputs.value().at(node->in1()),
+          node->in2(),
+          replaced_inputs.value().at(node->in3()));
+      registerReplaceWithPredicate(node, replacement);
+    }
   }
 
   void handle(ReductionOp* node) final {

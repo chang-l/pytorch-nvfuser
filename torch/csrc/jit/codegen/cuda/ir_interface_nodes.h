@@ -461,6 +461,28 @@ class TORCH_CUDA_CU_API TensorView : public Val {
     return has_swizzle_op_;
   }
 
+  void setAsLookupTV(int dim) {
+    if (domain_ != nullptr) {
+      if (dim < domain_->domain().size()) {
+        domain_->domain()[dim]->setIterTypeAsLookup();
+      }
+      if (dim < domain_->getRootDomain().size()) {
+        domain_->getRootDomain()[dim]->setIterTypeAsLookup();
+      }
+      if (dim < domain_->getRFactorDomain().size()) {
+        domain_->getRFactorDomain()[dim]->setIterTypeAsLookup();
+      }
+    }
+  }
+
+  // has lookup iterType in domain or not
+  bool isLookupTV() const {
+    if (domain_ != nullptr) {
+      return domain_->hasLookup();
+    }
+    return false;
+  }
+
   friend TORCH_CUDA_CU_API TransformPropagator;
   friend TORCH_CUDA_CU_API MostInlinedTransformPropagator;
   friend TORCH_CUDA_CU_API TransformReplay;

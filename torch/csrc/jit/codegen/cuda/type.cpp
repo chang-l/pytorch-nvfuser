@@ -315,6 +315,8 @@ static const char* expr_type2string(ExprType t) {
       return "TernaryOp";
     case ExprType::RNGOp:
       return "RNGOp";
+    case ExprType::IndexSelectOp:
+      return "IndexSelectOp";
     case ExprType::ReductionOp:
       return "ReductionOp";
     case ExprType::GroupedReductionOp:
@@ -734,6 +736,15 @@ static const char* rng_op_type2string(RNGOpType t) {
   }
 }
 
+static const char* index_select_op_type2string(IndexSelectOpType t) {
+  switch (t) {
+    case IndexSelectOpType::Index_select:
+      return "index_select";
+    default:
+      TORCH_INTERNAL_ASSERT(false, "Unexpected IndexSelectOpType");
+  }
+}
+
 static const char* parallel_type2string(ParallelType t) {
   switch (t) {
     case ParallelType::BIDz:
@@ -1101,6 +1112,10 @@ std::ostream& operator<<(std::ostream& out, const TernaryOpType totype) {
 
 std::ostream& operator<<(std::ostream& out, const RNGOpType rngtype) {
   return out << rng_op_type2string(rngtype);
+}
+
+std::ostream& operator<<(std::ostream& out, const IndexSelectOpType totype) {
+  return out << index_select_op_type2string(totype);
 }
 
 std::ostream& operator<<(std::ostream& out, const ParallelType ptype) {

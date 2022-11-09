@@ -301,6 +301,11 @@ void PrecomputedValues::validate() {
 void PrecomputedValues::bindTensorMetaData(
     TensorView* tv,
     const TensorArgAbstract* tensor_arg_abstract) {
+
+  // if tv is a lookup tv, don't bind its shapes to computation's extents
+  if (tv->isLookupTV()) {
+    return;
+  }
   const auto root_domain =
       TensorDomain::noReductions(tv->getMaybeRFactorDomain());
   TORCH_INTERNAL_ASSERT(
@@ -316,6 +321,8 @@ void PrecomputedValues::bindTensorMetaData(
       bindValue(expanded_extent->evaluatorIndex(), value);
     } else {
       auto extent = root_domain[dim]->extent();
+      TORCH_INTERNAL_ASSERT(
+          !root_domain[dim]->isLookupIterType(), "Cannot bind lookup axis: ");
       bindValue(extent->evaluatorIndex(), value);
     }
   }
@@ -505,7 +512,6 @@ void NaiveValueMachine::runBinaryOp(int index) {
 
   precomputed_values_.defined_[dest_index] = true;
 }
-
 } // namespace cuda
 } // namespace fuser
 } // namespace jit

@@ -123,6 +123,7 @@ enum class ExprType {
   ExpandOp,
   ShiftOp,
   GatherOp,
+  IndexSelectOp,
   ViewOp,
   LoadStoreOp,
   Split,
@@ -269,6 +270,8 @@ bool alsoBooleanOperator(const BinaryOpType bopt);
 
 enum class TernaryOpType { Clamp, Lerp, Threshold, Where };
 
+enum class IndexSelectOpType { Index_select };
+
 enum class ParallelType {
   BIDz,
   BIDy,
@@ -382,6 +385,9 @@ TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const UnaryOpType);
 TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const BinaryOpType);
 TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const TernaryOpType);
 TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const RNGOpType);
+TORCH_CUDA_CU_API std::ostream& operator<<(
+    std::ostream&,
+    const IndexSelectOpType);
 TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const ParallelType);
 TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const MemoryType);
 TORCH_CUDA_CU_API std::ostream& operator<<(std::ostream&, const IterType);

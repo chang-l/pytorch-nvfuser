@@ -936,6 +936,45 @@ void ComputeAtRootDomainMapBuilder::mapPointwiseOrReductionOp(Expr* e) {
   }
 }
 
+void ComputeAtRootDomainMapBuilder::mapIndexSelectOp(Expr* e) {
+  if (e->output(0)->getValType() != ValType::TensorView) {
+    return;
+  }
+
+  // Broadcast is handled separately, so e should never be BroadcastOp.
+  TORCH_INTERNAL_ASSERT(e->getExprType() != ExprType::BroadcastOp);
+
+  TORCH_INTERNAL_ASSERT(e->outputs().size() >= 1);
+  const TensorView* out_tv = e->output(0)->as<TensorView>();
+  const TensorDomain* out_td = out_tv->domain();
+  const auto& out_root = out_td->getRootDomain();
+
+  // Record equalities from output to all the inputs
+  // ignores un-concretizable broadcasts
+  for (auto* in_tv : ir_utils::filterByType<TensorView>(e->inputs())) {
+    const TensorDomain* in_td = in_tv->domain();
+    std::vector<IterDomain*> in_root =
+        TensorDomain::noReductions(in_tv->getMaybeRFactorDomain());
+    for (const auto it : c10::irange(in_root.size())) {
+      if (e->outputs().size() > 1) {
+        TORCH_INTERNAL_ASSERT(
+            e->isA<WelfordOp>() || e->isA<GroupedReductionOp>(),
+            "Multi-output mapping assumes WelforddOp or GroupedReductionOp but, ",
+            e->getExprType().value(),
+            " is found");
+        for (auto o : e->outputs()) {
+          auto o_tv = o->as<TensorView>();
+          auto o_td = o_tv->domain();
+          auto o_root = o_td->getRootDomain();
+          setMaybeMapped(in_td, in_root[it], o_td, o_root[it]);
+        }
+      } else {
+        setMaybeMapped(in_td, in_root[it], out_td, out_root[it]);
+      }
+    }
+  }
+}
+
 void ComputeAtRootDomainMapBuilder::handle(BroadcastOp* op) {
   const TensorDomain* in_td = op->in()->as<TensorView>()->domain();
   const TensorDomain* out_td = op->out()->as<TensorView>()->domain();
