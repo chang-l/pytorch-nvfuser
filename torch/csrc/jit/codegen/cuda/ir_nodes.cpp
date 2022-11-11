@@ -588,6 +588,13 @@ IndexSelectOp::IndexSelectOp(const IndexSelectOp* src, IrCloner* ir_cloner)
       in2_(src->in2_),
       in3_(ir_cloner->clone(src->in3_)) {}
 
+Expr* IndexSelectOp::shallowCopy() const {
+  auto result = IrBuilder::create<IndexSelectOp>(
+      index_select_op_type_, out_, in1_, in2_, in3_);
+  result->copyPredicatesFrom(this);
+  return result;
+}
+
 bool IndexSelectOp::sameAs(const Statement* other) const {
   if (this == other) {
     return true;
