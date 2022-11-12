@@ -34,15 +34,33 @@ TensorView* maybe_broadcast_inner_to_rank(TensorView* t, size_t rank) {
   return t;
 }
 
-TensorView* maybe_broadcast_outter_to_rank(TensorView* t, size_t rank) {
-  size_t t_rank = TensorDomain::noReductions(t->getMaybeRFactorDomain()).size();
-
+TensorView* maybe_broadcast_idxtv_inner_outter_to_rank(
+    TensorView* t,
+    size_t dim,
+    size_t rank) {
+  size_t ori_rank =
+      TensorDomain::noReductions(t->getMaybeRFactorDomain()).size();
+  TORCH_INTERNAL_ASSERT(
+      ori_rank == 1,
+      "The rank of index tensorview in index_select must be 1, but got ",
+      ori_rank);
+  TORCH_INTERNAL_ASSERT(
+      dim < rank,
+      "The dim of index_select must be < rank, but got ",
+      dim,
+      " >= ",
+      rank);
+  std::vector<bool> bcast_dims(rank, false);
   // broadcast outter on inp to match rank with other.
-  if (t_rank < rank) {
-    std::vector<bool> outter_bcast_dims(rank, false);
-    std::fill(
-        outter_bcast_dims.begin() + t_rank, outter_bcast_dims.end(), true);
-    t = broadcast(t, outter_bcast_dims);
+  if (dim + 1 < rank) {
+    std::fill(bcast_dims.begin() + dim + 1, bcast_dims.end(), true);
+  }
+  // broadcast inner on inp to match rank with other.
+  if (dim > 0) {
+    std::fill(bcast_dims.begin(), bcast_dims.begin() + dim, true);
+  }
+  if (dim + 1 < rank || dim > 0) {
+    t = broadcast(t, bcast_dims);
   }
   return t;
 }
@@ -271,11 +289,7 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
 // T2 is index tensor.
 // Output[I, J] = Index_Select(T0[K, J], T1, T2[I]), if T1==0.
 // Output[K, I] = Index_Select(T0[K, J], T1, T2[I]), if T1==1.
-TensorView* newOutputTVForIndexSelect(
-    Val* v1,
-    int dim,
-    Val* v3,
-    DataType dtype) {
+TensorView* newIndexSelectOutputTV(Val* v1, int dim, Val* v3, DataType dtype) {
   auto lookup_tv = v1->as<TensorView>();
   auto lookup_dom =
       TensorDomain::noReductions(lookup_tv->getMaybeRFactorDomain());
@@ -312,7 +326,8 @@ TensorView* newOutputTVForIndexSelect(
       stop_offset->isConstInt(),
       "Invalid IterDomain stop offset: ",
       stop_offset);
-  start_offsets[dim] = std::max(start_offsets[dim], start_offset->evaluateInt());
+  start_offsets[dim] =
+      std::max(start_offsets[dim], start_offset->evaluateInt());
   stop_offsets[dim] = std::max(stop_offsets[dim], stop_offset->evaluateInt());
 
   // process lookup tv
@@ -386,44 +401,6 @@ std::vector<Val*> maybeBroadcast(const std::vector<Val*>& vals) {
     }
   }
   return out_vals;
-}
-
-std::vector<Val*> processIndexSelect(Val* v1, int dim, Val* v3) {
-  std::vector<Val*> out_vals(2, nullptr);
-  size_t n_dims = 0;
-  // lookup table is at vals[0] and index is at vals[2]
-  if (v1->getValType().value() == ValType::TensorView) {
-    n_dims = TensorDomain::noReductions(
-                 v1->as<TensorView>()->getMaybeRFactorDomain())
-                 .size();
-  }
-
-  TORCH_CHECK(
-      v1->getValType().value() == ValType::TensorView,
-      "input0 of index_select must be ValType::TensorView");
-
-  out_vals[0] = v1;
-
-  TORCH_CHECK(
-      v3->getValType().value() == ValType::TensorView,
-      "input2 of index_select must be ValType::TensorView");
-
-  // broadcast index to lookup's rank.
-  auto v3_high = maybe_broadcast_outter_to_rank(v3->as<TensorView>(), n_dims - dim);
-  out_vals[1] = maybe_broadcast_inner_to_rank(v3_high->as<TensorView>(), n_dims);
-  return out_vals;
-}
-
-Val* newValForIndexSelect(Val* input, int dim, Val* index) {
-  DataType dtype = input->getDataType().value();
-  TORCH_CHECK(
-      dtype != DataType::Null, "Invalid datatype provided for new value.");
-
-  const ValType vtype = input->getValType().value();
-
-  TORCH_CHECK(vtype == ValType::TensorView, "Input must be TensorView");
-
-  return newOutputTVForIndexSelect(input, dim, index, dtype);
 }
 
 Val* newValLike(Val* val, DataType dtype) {
@@ -955,15 +932,28 @@ TensorView* arithOpOverloads(
 }
 
 //
-template <typename T1, typename T3>
-TensorView* arithOpOverloadsForIndexSelect(
+TensorView* arithIndexSelectOpOverloads(
     Val* (*func)(Val*, int, Val*),
-    T1* v1,
+    Val* v1,
     int dim,
-    T3* v3) {
-  auto vals = processIndexSelect(v1, dim, v3);
-  Val* out =
-      func(vals[0]->template as<Val>(), dim, vals[1]->template as<Val>());
+    Val* v3) {
+  size_t n_dims = 0;
+  // lookup table is at vals[0] and index is at vals[2]
+  if (v1->getValType().value() == ValType::TensorView) {
+    n_dims = TensorDomain::noReductions(
+                 v1->as<TensorView>()->getMaybeRFactorDomain())
+                 .size();
+  }
+  TORCH_CHECK(
+      v1->getValType().value() == ValType::TensorView &&
+          v3->getValType().value() == ValType::TensorView,
+      "The first and the third argments of index_select must be ValType::TensorView");
+
+  // broadcast index to lookup's rank.
+  v3 = maybe_broadcast_idxtv_inner_outter_to_rank(
+      v3->as<TensorView>(), dim, n_dims);
+
+  Val* out = func(v1->template as<Val>(), dim, v3->template as<Val>());
   TORCH_INTERNAL_ASSERT(out->isA<TensorView>());
   return out->as<TensorView>();
 }
@@ -2062,7 +2052,14 @@ TensorView* lerp(TensorView* v1, TensorView* v2, TensorView* v3) {
 
 // index_select
 Val* index_select(Val* input, int dim, Val* index) {
-  Val* out = newValForIndexSelect(input, dim, index);
+  DataType dtype = input->getDataType().value();
+  TORCH_CHECK(
+      dtype != DataType::Null, "Invalid datatype provided for new value.");
+  TORCH_CHECK(
+      input->getValType().value() == ValType::TensorView,
+      "The first argement of index_select must be TensorView");
+  Val* out = newIndexSelectOutputTV(input, dim, index, dtype);
+
   IrBuilder::create<IndexSelectOp>(
       IndexSelectOpType::Index_select, out, input, dim, index);
   return out;
@@ -2070,7 +2067,7 @@ Val* index_select(Val* input, int dim, Val* index) {
 
 TensorView* index_select(TensorView* v1, int dim, TensorView* v3) {
   v1->setAsLookupTV(dim);
-  return arithOpOverloadsForIndexSelect(index_select, v1, dim, v3);
+  return arithIndexSelectOpOverloads(index_select, v1, dim, v3);
 }
 
 // addcmul

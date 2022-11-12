@@ -60,9 +60,7 @@ enum class DebugDumpOption {
   Cubin, //! Dump compiled CUBIN
   Ptx, //! Dump compiled PTX
   BankConflictInfo, //! Dump bank confliction info
-  SyncMap, //! RAW dependency info
-  PassTransform, //! When running InlinePropagator, print propagation
-                 //! path and inlining result
+  SyncMap //! RAW dependency info
 };
 
 TORCH_CUDA_CU_API bool isDebugDumpEnabled(DebugDumpOption option);

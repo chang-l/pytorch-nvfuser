@@ -33,7 +33,6 @@ enum class RecordType {
   VarianceMeanOp,
   ViewOp,
   PermuteOp,
-  IndexSelectOp,
 };
 
 //! RecordFunctor is the base class record for operations recorded by
@@ -1265,36 +1264,6 @@ struct ReductionOpRecord : RecordFunctor {
   bool keep_dim_;
   //! The output data type.
   Nvf::DataType dtype_;
-};
-
-struct IndexSelectOpRecord : RecordFunctor {
-  IndexSelectOpRecord(
-      std::vector<State> _args,
-      std::vector<State> _outputs,
-      int64_t dim)
-      : RecordFunctor(
-            std::move(_args),
-            std::move(_outputs),
-            "index_select",
-            RecordType::IndexSelectOp),
-        dim_(dim) {}
-  virtual ~IndexSelectOpRecord() = default;
-  virtual RecordFunctor* clone() final {
-    return new IndexSelectOpRecord(*this);
-  }
-
-  void operator()(FusionDefinition& fd) final {
-    auto arg1 =
-        fd.getFusionState(args_.at(0).index)->template as<Nvf::TensorView>();
-    auto arg3 =
-        fd.getFusionState(args_.at(1).index)->template as<Nvf::TensorView>();
-    auto output = Nvf::index_select(arg1, dim_, arg3);
-    fd.setFusionState(outputs_.at(0).index, output);
-  }
-
- private:
-  //! Dimension to select.
-  int64_t dim_;
 };
 
 //! Specialized Record Functor for recording FusionDefinition input scalars.

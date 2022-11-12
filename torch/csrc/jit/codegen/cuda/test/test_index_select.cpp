@@ -59,8 +59,6 @@ using namespace torch::jit::fuser::cuda;
 using namespace at::indexing;
 
 // sh build.sh;
-// build/bin/test_jit
-// --gtest_filter='NVFuserTest*FusionIndexSelectExplicitBroadcast_CUDA*'
 // build/bin/test_jit --gtest_filter='NVFuserTest*FusionIndexSelect_CUDA*'
 // build/bin/test_jit --gtest_filter='NVFuserTest*FusionIndexSelect3DTv_CUDA*'
 // build/bin/test_jit --gtest_filter='NVFuserTest*FusionIndexSelectCanSch_CUDA*'
@@ -72,59 +70,6 @@ using namespace at::indexing;
 // --gtest_filter='NVFuserTest*FusionIndexSelectDim1InRank2_CUDA*'
 // build/bin/test_jit
 // --gtest_filter='NVFuserTest*FusionIndexSelectDim2InRank3_CUDA*'
-TEST_F(NVFuserTest, FusionIndexSelectExplicitBroadcast_CUDA) {
-  Fusion fusion;
-  FusionGuard fg(&fusion);
-  // dimensionality of the problem
-  int nDims = 2;
-  int nElem = 69;
-  int nElem_select = nElem + 27;
-  int nFeat = 66;
-
-  // Set up your input tensor views
-  TensorView* tv0 = makeContigTensor(nDims);
-  TensorView* tv1 = makeContigTensor(nDims);
-  TensorView* tv_idx = makeContigTensor(1, DataType::Int);
-
-  // Register your inputs
-  fusion.addInput(tv1);
-  fusion.addInput(tv0);
-  fusion.addInput(tv_idx);
-
-  TensorView* tv_idx_bc = broadcast(tv_idx, {false, true});
-  TensorView* tv_sel = index_select(tv0, 0, tv_idx_bc);
-  TensorView* tv2 = mul(tv1, tv_sel);
-  TensorView* tv3 = add(IrBuilder::create<Double>(17.0), tv2);
-  // Register your outputs
-  fusion.addOutput(tv3);
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor input0 = at::randn({nElem, nFeat}, options); // lookup
-  at::Tensor input1 =
-      at::randn({nElem_select, nFeat}, options); // output&elemwise
-  std::vector<int64_t> storage(nElem_select);
-  for (int i = 0; i < nElem_select; ++i) {
-    storage[i] = std::rand() % nElem;
-  }
-  auto opts = torch::TensorOptions().dtype(torch::kLong);
-  auto input_idx_cpu =
-      torch::from_blob(storage.data(), {int64_t(storage.size())}, opts).clone();
-  auto input_idx = input_idx_cpu.to(torch::kCUDA);
-  at::Tensor output = at::empty_like(input1);
-
-  std::vector<IValue> aten_inputs = {input1, input0, input_idx};
-  auto lparams = schedulePointwise(&fusion, aten_inputs);
-
-  FusionExecutor fe;
-  fe.compileFusion(&fusion, aten_inputs, lparams);
-  fe.runFusion(aten_inputs, {output}, lparams);
-
-  auto tv0_ref = at::index_select(input0, 0, input_idx);
-  at::Tensor tv2_ref = tv0_ref * input1;
-  at::Tensor output_ref = tv2_ref + 17.0;
-
-  TORCH_CHECK(output_ref.allclose(output));
-}
 
 TEST_F(NVFuserTest, FusionIndexSelect_CUDA) {
   Fusion fusion;
