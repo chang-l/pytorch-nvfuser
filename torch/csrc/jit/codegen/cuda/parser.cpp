@@ -1537,7 +1537,7 @@ class IrParser {
               // TODO(Feiwen): uncomment following lines once backend PR meraged
               // index_select is defined in backend PR
               /*
-              auto out = index_select(
+              out = index_select(
                   input->as<TensorView>(),
                   dim_value.value(),
                   index->as<TensorView>());
@@ -4329,6 +4329,22 @@ bool insertProfileIValue(ProfilingRecord* pr, Node* node, size_t offset) {
       // argument 2: dim1;
       case 1:
       case 2:
+        profileInt(pr, node, offset);
+        break;
+      default:
+        return false;
+    }
+    return true;
+  }
+
+  static auto index_select_schema =
+      getOperatorForLiteral(
+          "aten::index_select(Tensor self, int dim, Tensor index) -> Tensor")
+          ->schema();
+  if (node->matches(index_select_schema)) {
+    switch (offset) {
+      // argument 1: unsqueeze dim;
+      case 1:
         profileInt(pr, node, offset);
         break;
       default:
