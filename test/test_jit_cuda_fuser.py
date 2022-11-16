@@ -4163,6 +4163,7 @@ class TestCudaFuser(JitTestCase):
         lookup_tv = torch.rand(lookup_size, feat_dim, dtype=torch.float, device="cuda")
         indies_tv = torch.randint(0, lookup_size, (num_elements,), device="cuda").to(dtype=torch.int)
         sbf = torch.rand(num_elements, feat_dim, dtype=torch.float, device="cuda")
+
         def t(x_kj, idx_kj, sbf):
             sbf_res = torch.index_select(x_kj, 0, idx_kj) * sbf
             sbf_res = sbf_res + 17
@@ -4182,10 +4183,12 @@ class TestCudaFuser(JitTestCase):
         lookup_tv = torch.rand(lookup_size, feat_dim, dtype=torch.float, device="cuda")
         indies_tv = torch.randint(0, lookup_size, (num_elements,), dtype=torch.float, device="cuda").to(dtype=torch.int)
         sbf = torch.rand(num_elements, feat_dim, dtype=torch.float, device="cuda")
+
         def failure(x_kj, idx_kj, sbf):
             sbf_res = torch.index_select(x_kj, dim, idx_kj) * sbf
             sbf_res = sbf_res + 17
             return sbf_res
+
         with self.assertRaises(Exception) as error_out:
             t_jit = torch.jit.script(failure)
             t_jit(lookup_tv, indies_tv, sbf)
