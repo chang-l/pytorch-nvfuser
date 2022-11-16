@@ -504,6 +504,13 @@ void IrPrinter::handle(const RNGOp* rop) {
   }
 }
 
+void IrPrinter::handle(const SelectOp* sop) {
+  indent() << sop->output(0) << "\n";
+  indent() << "   = select( " << sop->input(0)
+           << ", axis = " << sop->getSelectAxis()
+           << ", index = " << sop->input(1) << " )\n";
+}
+
 void IrPrinter::handle(const IndexSelectOp* top) {
   bool istvop = ir_utils::isTvOp(top);
   if (!print_inline_) {
