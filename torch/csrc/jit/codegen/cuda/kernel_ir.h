@@ -201,6 +201,10 @@ class TORCH_CUDA_CU_API Allocate final : public Expr {
       Val* size,
       bool zero_init = false);
 
+  virtual const char* getOpString() const override {
+    return "Allocate";
+  }
+
   Expr* shallowCopy() const override;
 
   Val* buffer() const {
@@ -249,6 +253,10 @@ class TORCH_CUDA_CU_API BlockSync final : public Expr {
  public:
   explicit BlockSync(IrBuilderPasskey passkey, bool war_sync = false);
 
+  virtual const char* getOpString() const override {
+    return "BlockSync";
+  }
+
   Expr* shallowCopy() const override;
 
   bool isWarHazardSync() const {
@@ -264,6 +272,10 @@ class TORCH_CUDA_CU_API BlockSync final : public Expr {
 class TORCH_CUDA_CU_API CpAsyncWait final : public Expr {
  public:
   explicit CpAsyncWait(IrBuilderPasskey passkey, unsigned int keep_stages = 0);
+
+  virtual const char* getOpString() const override {
+    return "CpAsyncWait";
+  }
 
   Expr* shallowCopy() const override;
 
@@ -285,6 +297,10 @@ class TORCH_CUDA_CU_API CpAsyncCommit final : public Expr {
  public:
   explicit CpAsyncCommit(IrBuilderPasskey passkey);
 
+  virtual const char* getOpString() const override {
+    return "CpAsyncCommit";
+  }
+
   Expr* shallowCopy() const override;
 };
 
@@ -296,6 +312,10 @@ class TORCH_CUDA_CU_API GridSync final : public Expr {
       IrBuilderPasskey passkey,
       ParallelTypeBitmap sync_dims,
       Val* sync_buffer);
+
+  virtual const char* getOpString() const override {
+    return "GridSync";
+  }
 
   Expr* shallowCopy() const override;
 
@@ -318,6 +338,10 @@ class TORCH_CUDA_CU_API InitMagicZero final : public Expr {
  public:
   explicit InitMagicZero(IrBuilderPasskey passkey);
 
+  virtual const char* getOpString() const override {
+    return "InitMagicZero";
+  }
+
   Expr* shallowCopy() const override;
 };
 
@@ -326,6 +350,10 @@ class TORCH_CUDA_CU_API InitMagicZero final : public Expr {
 class TORCH_CUDA_CU_API UpdateMagicZero final : public Expr {
  public:
   explicit UpdateMagicZero(IrBuilderPasskey passkey);
+
+  virtual const char* getOpString() const override {
+    return "UpdateMagicZero";
+  }
 
   Expr* shallowCopy() const override;
 };
@@ -428,6 +456,10 @@ class TORCH_CUDA_CU_API ForLoop final : public Expr {
 
   ForLoop(IrBuilderPasskey passkey, const ForLoop* other);
 
+  virtual const char* getOpString() const override {
+    return "ForLoop";
+  }
+
   Expr* shallowCopy() const override;
 
   Val* index() const {
@@ -524,6 +556,10 @@ class TORCH_CUDA_CU_API IfThenElse final : public Expr {
  public:
   explicit IfThenElse(IrBuilderPasskey passkey, Predicate* cond);
 
+  virtual const char* getOpString() const override {
+    return "IfThenElse";
+  }
+
   Expr* shallowCopy() const override;
 
   Scope& thenBody() {
@@ -570,6 +606,10 @@ class TORCH_CUDA_CU_API GridReduction final : public ReductionOp {
       Val* entrance_index,
       Val* entrances,
       bool is_allreduce = false);
+
+  virtual const char* getOpString() const override {
+    return "GridReduction";
+  }
 
   Expr* shallowCopy() const override;
 
@@ -627,6 +667,10 @@ class TORCH_CUDA_CU_API GroupedGridReduction final : public GroupedReductionOp {
       Val* entrances,
       Val* buffer_stride,
       bool is_allreduce = false);
+
+  virtual const char* getOpString() const override {
+    return "GroupedGridReduction";
+  }
 
   Expr* shallowCopy() const override;
 
@@ -695,6 +739,10 @@ class TORCH_CUDA_CU_API GridBroadcast final : public Expr {
       Allocate* broadcast_buffer,
       Allocate* sync_buffer);
 
+  virtual const char* getOpString() const override {
+    return "GridBroadcast";
+  }
+
   Expr* shallowCopy() const override;
 
   BroadcastOp* broadcast_op() const {
@@ -735,6 +783,10 @@ class TORCH_CUDA_CU_API GridWelford final : public Expr {
       Allocate* sync_buffer,
       Val* entrance_index,
       Val* entrances);
+
+  virtual const char* getOpString() const override {
+    return "GridWelford";
+  }
 
   Expr* shallowCopy() const override;
 
@@ -807,6 +859,10 @@ class TORCH_CUDA_CU_API GroupedGridWelford final : public GroupedWelfordOp {
       Val* buffer_stride,
       bool is_allreduce = false);
 
+  virtual const char* getOpString() const override {
+    return "GroupedGridWelford";
+  }
+
   Expr* shallowCopy() const override;
 
   const std::array<std::vector<Allocate*>, 3>& reduction_buffers() const {
@@ -873,6 +929,10 @@ class TORCH_CUDA_CU_API AllocateFusedReduction final : public Expr {
   explicit AllocateFusedReduction(
       IrBuilderPasskey passkey,
       GroupedGridWelford* grouped_grid_welford);
+
+  virtual const char* getOpString() const override {
+    return "AllocateFusedReduction";
+  }
 
   Expr* shallowCopy() const override;
 

@@ -481,16 +481,6 @@ void IrGraphGenerator::handle(const SelectOp* op) {
   addArc(op, op->output(0));
 }
 
-void IrGraphGenerator::handle(const RNGOp* op) {
-  // node
-  std::stringstream label;
-  label << op->getRNGOpType();
-  printExpr(op, label.str());
-
-  // inputs & outputs
-  addArc(op, op->output(0));
-}
-
 void IrGraphGenerator::handle(const IndexSelectOp* op) {
   // node
   std::stringstream label;
@@ -503,6 +493,16 @@ void IrGraphGenerator::handle(const IndexSelectOp* op) {
   addArc(IrBuilder::create<Int>(op->in2()), op, "[color=blue]");
   addArc(op->in3(), op, "[color=brown]");
   addArc(op, op->out());
+}
+
+void IrGraphGenerator::handle(const RNGOp* op) {
+  // node
+  std::stringstream label;
+  label << op->getRNGOpType();
+  printExpr(op, label.str());
+
+  // inputs & outputs
+  addArc(op, op->output(0));
 }
 
 void IrGraphGenerator::handle(const BroadcastOp* op) {

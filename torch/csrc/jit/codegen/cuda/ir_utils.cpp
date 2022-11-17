@@ -283,23 +283,6 @@ struct SubstituteInExpr : public OptInDispatch {
         index);
   }
 
-  void handle(RNGOp* rng_expr) final {
-    std::vector<Val*> subsituted_params;
-    for (auto v : rng_expr->getParameters()) {
-      subsituted_params.emplace_back(reference_->sameAs(v) ? substitute_ : v);
-    }
-    auto out = reference_->sameAs(rng_expr->output(0)) ? substitute_
-                                                       : rng_expr->output(0);
-    expr_ = IrBuilder::create<RNGOp>(
-        rng_expr->container(),
-        rng_expr->getRNGOpType(),
-        out,
-        rng_expr->dtype(),
-        subsituted_params,
-        rng_expr->getRNGOffset(),
-        rng_expr->getPhiloxIndex());
-  }
-
   void handle(IndexSelectOp* idx_sel_expr) final {
     auto in1 = reference_->sameAs(idx_sel_expr->in1()) ? substitute_
                                                        : idx_sel_expr->in1();
@@ -315,6 +298,23 @@ struct SubstituteInExpr : public OptInDispatch {
         in1,
         in2,
         in3);
+  }
+  
+  void handle(RNGOp* rng_expr) final {
+    std::vector<Val*> subsituted_params;
+    for (auto v : rng_expr->getParameters()) {
+      subsituted_params.emplace_back(reference_->sameAs(v) ? substitute_ : v);
+    }
+    auto out = reference_->sameAs(rng_expr->output(0)) ? substitute_
+                                                       : rng_expr->output(0);
+    expr_ = IrBuilder::create<RNGOp>(
+        rng_expr->container(),
+        rng_expr->getRNGOpType(),
+        out,
+        rng_expr->dtype(),
+        subsituted_params,
+        rng_expr->getRNGOffset(),
+        rng_expr->getPhiloxIndex());
   }
 
   void handle(ReductionOp* reduction_expr) final {
@@ -929,9 +929,13 @@ Val* getReductionInitValOf(TensorView* tv) {
 // reduction?
 bool isReductionOp(const Expr* expr) {
   // Note that GridReduction inherits ReductionOp
-  return expr->isA<ReductionOp>() || expr->isA<GroupedReductionOp>() ||
-      expr->isA<WelfordOp>() || expr->isA<GroupedWelfordOp>() ||
-      expr->isA<kir::GridWelford>() || expr->isA<kir::GroupedGridWelford>();
+  return expr->isOneOf<
+      ReductionOp,
+      GroupedReductionOp,
+      WelfordOp,
+      GroupedWelfordOp,
+      kir::GridWelford,
+      kir::GroupedGridWelford>();
 }
 
 bool isReductionTvOp(const Expr* expr) {
@@ -1006,17 +1010,10 @@ struct ReplaceValInIndexVal : public OptInDispatch {
     // Recursively traverse its defining expr
     auto def = val->definition();
     if (def != nullptr) {
-      switch (def->etype()) {
-        case ExprType::UnaryOp:
-        case ExprType::BinaryOp:
-        case ExprType::TernaryOp:
-        case ExprType::Swizzle2DInt:
-        case ExprType::PairSelect:
-          handle(val->definition());
-          break;
-        default:
-          TORCH_INTERNAL_ASSERT(
-              false, "Unexpected definition: ", def->toString())
+      if (def->isOneOf<UnaryOp, BinaryOp, TernaryOp>()) {
+        handle(val->definition());
+      } else {
+        TORCH_INTERNAL_ASSERT(false, "Unexpected definition: ", def->toString())
       }
       // last_visited_val_ is set in the expr handlers
     } else {

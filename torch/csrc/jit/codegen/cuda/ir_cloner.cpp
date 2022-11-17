@@ -116,10 +116,6 @@ void IrCloner::handle(const SelectOp* op) {
   clone_ = IrBuilder::clone(op, this);
 }
 
-void IrCloner::handle(const RNGOp* op) {
-  clone_ = IrBuilder::clone(op, this);
-}
-
 void IrCloner::handle(const IndexSelectOp* op) {
   clone_ = IrBuilder::clone(op, this);
   TORCH_CHECK(
@@ -136,6 +132,10 @@ void IrCloner::handle(const IndexSelectOp* op) {
   }
   clone_->as<IndexSelectOp>()->in1()->as<TensorView>()->setAsLookupTV(
       op->in2());
+}
+
+void IrCloner::handle(const RNGOp* op) {
+  clone_ = IrBuilder::clone(op, this);
 }
 
 void IrCloner::handle(const BroadcastOp* op) {
