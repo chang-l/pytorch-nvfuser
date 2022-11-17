@@ -259,6 +259,50 @@ bool SelectOp::sameAs(const Statement* other) const {
   return Expr::sameAs(other);
 }
 
+IndexSelectOp::IndexSelectOp(
+    IrBuilderPasskey passkey,
+    Val* out,
+    Val* in1,
+    int dim,
+    IterDomain* select_id,
+    Val* in3,
+    Val* lookup_ext)
+    : Expr(passkey), in2_{dim}, select_id_{select_id}, lookup_ext_{lookup_ext} {
+  addOutput(out);
+  addInput(in1);
+  addInput(in3);
+
+  if (input(0)->isA<TensorView>()) {
+    input(0)->as<TensorView>()->setAsLookupTV(dim);
+  }
+}
+
+IndexSelectOp::IndexSelectOp(const IndexSelectOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      in2_(src->in2_),
+      select_id_(ir_cloner->clone(src->select_id_)) {}
+
+Expr* IndexSelectOp::shallowCopy() const {
+  auto result = IrBuilder::create<IndexSelectOp>(
+      output(0), input(0), in2_, select_id_, input(1));
+  result->copyPredicatesFrom(this);
+  return result;
+}
+
+bool IndexSelectOp::sameAs(const Statement* other) const {
+  if (this == other) {
+    return true;
+  }
+  if (!other->isA<IndexSelectOp>()) {
+    return false;
+  }
+  const auto other_op = other->as<IndexSelectOp>();
+  if (!select_id_->sameAs(other_op->select_id_)) {
+    return false;
+  }
+  return Expr::sameAs(other);
+}
+
 ARangeOp::ARangeOp(
     IrBuilderPasskey passkey,
     Val* out,
@@ -580,60 +624,6 @@ bool RNGOp::sameAs(const Statement* other) const {
   }
   return Expr::sameAs(other);
 }
-
-//
-IndexSelectOp::IndexSelectOp(
-    IrBuilderPasskey passkey,
-    IndexSelectOpType type,
-    Val* out,
-    Val* in1,
-    int dim,
-    Val* in3,
-    Val* lookup_ext)
-    : Expr(passkey),
-      index_select_op_type_{type},
-      out_{out},
-      in1_{in1},
-      in2_{dim},
-      in3_{in3},
-      lookup_ext_{lookup_ext} {
-  addOutput(out);
-  addInput(in1);
-  addInput(in3);
-
-  if (in1_->isA<TensorView>()) {
-    in1_->as<TensorView>()->setAsLookupTV(dim);
-  }
-}
-
-IndexSelectOp::IndexSelectOp(const IndexSelectOp* src, IrCloner* ir_cloner)
-    : Expr(src, ir_cloner),
-      index_select_op_type_(src->index_select_op_type_),
-      out_(ir_cloner->clone(src->out_)),
-      in1_(ir_cloner->clone(src->in1_)),
-      in2_(src->in2_),
-      in3_(ir_cloner->clone(src->in3_)) {}
-
-Expr* IndexSelectOp::shallowCopy() const {
-  auto result = IrBuilder::create<IndexSelectOp>(
-      index_select_op_type_, out_, in1_, in2_, in3_);
-  result->copyPredicatesFrom(this);
-  return result;
-}
-
-bool IndexSelectOp::sameAs(const Statement* other) const {
-  if (this == other) {
-    return true;
-  }
-  if (!other->isA<IndexSelectOp>()) {
-    return false;
-  }
-  const auto other_op = other->as<IndexSelectOp>();
-  if (getIndexSelectOpType() != other_op->getIndexSelectOpType())
-    return false;
-  return Expr::sameAs(other);
-}
-//
 
 BroadcastOp::BroadcastOp(
     IrBuilderPasskey passkey,

@@ -159,6 +159,23 @@ void OptOutMutator::mutate(SelectOp* sop) {
   IrBuilder::create<SelectOp>(container, out, in, select_axis, index);
 }
 
+void OptOutMutator::mutate(IndexSelectOp* sop) {
+  Val* out = maybeMutated(sop->output(0));
+  Val* in1 = maybeMutated(sop->input(0));
+  Val* in3 = maybeMutated(sop->input(1));
+  IterDomain* select_axis =
+      maybeMutated(sop->getSelectAxis())->as<IterDomain>();
+  if (out == sop->output(0) && in1 == sop->input(0) && in3 == sop->input(1) &&
+      select_axis->sameAs(sop->getSelectAxis())) {
+    return;
+  }
+
+  auto container = sop->container();
+  container->removeExpr(sop);
+  IrBuilder::create<IndexSelectOp>(
+      container, out, in1, sop->in2(), select_axis, in3);
+}
+
 void OptOutMutator::mutate(ARangeOp* aop) {
   Val* out = maybeMutated(aop->output(0));
 
@@ -265,21 +282,6 @@ void OptOutMutator::mutate(RNGOp* rop) {
       mutated_parameters,
       rop->getRNGOffset(),
       philox_idx);
-}
-
-void OptOutMutator::mutate(IndexSelectOp* top) {
-  Val* out = maybeMutated(top->out());
-  Val* in1 = maybeMutated(top->in1());
-  Val* in3 = maybeMutated(top->in3());
-  if (out == top->out() && in1 == top->in1() && in3 == top->in3()) {
-    return;
-  }
-
-  auto container = top->container();
-  auto top_type = top->getIndexSelectOpType();
-  container->removeExpr(top);
-  IrBuilder::create<IndexSelectOp>(
-      container, top_type, out, in1, top->in2(), in3);
 }
 
 void OptOutMutator::mutate(ReductionOp* rop) {

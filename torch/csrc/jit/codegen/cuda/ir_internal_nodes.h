@@ -92,11 +92,12 @@ class TORCH_CUDA_CU_API IndexSelectOp : public Expr {
  public:
   IndexSelectOp(
       IrBuilderPasskey,
-      IndexSelectOpType type,
       Val* out,
       Val* in1,
       int dim,
+      IterDomain* select_id,
       Val* in3,
+
       Val* lookup_ext = nullptr);
 
   IndexSelectOp(const IndexSelectOp* src, IrCloner* ir_cloner);
@@ -106,37 +107,28 @@ class TORCH_CUDA_CU_API IndexSelectOp : public Expr {
   virtual const char* getOpString() const override {
     return "SelectOp";
   }
-  
-  Val* out() const {
-    return out_;
-  }
 
-  Val* in1() const {
-    return in1_;
-  }
   int in2() const {
     return in2_;
   }
-  Val* in3() const {
-    return in3_;
+
+  std::unordered_map<IterDomain*, Val*> getIndexOverridingMap() const {
+    return {{select_id_, input(1)}};
+  }
+
+  IterDomain* getSelectAxis() const {
+    return select_id_;
   }
 
   Val* lookup_extent() const {
     return lookup_ext_;
   }
 
-  IndexSelectOpType getIndexSelectOpType() const {
-    return index_select_op_type_;
-  }
-
   bool sameAs(const Statement* other) const override;
 
  private:
-  const IndexSelectOpType index_select_op_type_;
-  Val* const out_ = nullptr;
-  Val* const in1_ = nullptr;
   const int in2_ = 0;
-  Val* const in3_ = nullptr;
+  IterDomain* select_id_;
   Val* lookup_ext_ = nullptr;
 };
 

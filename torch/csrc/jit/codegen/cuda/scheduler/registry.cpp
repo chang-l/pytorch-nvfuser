@@ -1235,24 +1235,26 @@ class ReductionScheduler : public SchedulerEntry {
       }
     }
 
+    for (auto idx_sel : ir_utils::getIndexSelectOps(fusion)) {
+      if (!idx_sel->input(0)->isFusionInput()) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Reduction,
+            "First input of IndexSelectOp must be fusion input.");
+        return false;
+      }
+      if (idx_sel->input(0)->uses().size() > 1) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Reduction,
+            "First input of IndexSelectOp can only be used by IndexSelectOp");
+        return false;
+      }
+    }
+
     auto reduction_tvs = scheduler_utils::getReductionTvs(fusion);
 
     if (reduction_tvs.size() == 0) {
       // Use pointwise logic
       return false;
-    }
-
-    auto idx_sel_ops =
-        ir_utils::getIndexSelectOps(fusion);
-    if (!idx_sel_ops.empty()) {
-      for(auto idx_sel : idx_sel_ops) {
-        if (!idx_sel->as<IndexSelectOp>()->in1()->isFusionInput()) {
-          scheduler_debug_utils::canScheduleRejectReason(
-              ScheduleHeuristic::PointWise,
-              "no support index select op's input0 as consumer");
-          return false;
-        }
-      }
     }
 
     if (hasNonUniqueBcast(fusion)) {
@@ -1424,6 +1426,30 @@ class TransposeScheduler : public SchedulerEntry {
       }
     }
 
+    for (auto idx_sel : ir_utils::getIndexSelectOps(fusion)) {
+      if (!idx_sel->input(0)->isFusionInput()) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Transpose,
+            "First inputs of IndexSelectOp must be fusion input.");
+        return false;
+      }
+      if (idx_sel->input(0)->uses().size() > 1) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Transpose,
+            "First inputs of IndexSelectOp can only be used by SelectOp");
+        return false;
+      }
+      auto root = TensorDomain::noReductions(
+          idx_sel->input(0)->as<TensorView>()->getMaybeRFactorDomain());
+      if (idx_sel->getSelectAxis() == root[root.size() - 1]) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Transpose,
+            "IndexSelectOp on inner dim is not supported by transpose scheduler yet."
+            "In transpose scheduler, we want to leave the select dim alone, instead of creating a tile for it.");
+        return false;
+      }
+    }
+
     if (!hasAtLeastTwoValidGroups(fusion)) {
       scheduler_debug_utils::canScheduleRejectReason(
           ScheduleHeuristic::Transpose,
@@ -1516,6 +1542,21 @@ class PointWiseScheduler : public SchedulerEntry {
       }
     }
 
+    for (auto idx_sel : ir_utils::getIndexSelectOps(fusion)) {
+      if (!idx_sel->input(0)->isFusionInput()) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::PointWise,
+            "First input of IndexSelectOp must be fusion input.");
+        return false;
+      }
+      if (idx_sel->input(0)->uses().size() > 1) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::PointWise,
+            "First input of IndexSelectOp can only be used by IndexSelectOp");
+        return false;
+      }
+    }
+
     if (ir_utils::getViewOps(fusion).size() > 0) {
       ComputeAtMap ca_map(fusion);
       if (requiresForwardViewReplay(fusion, ca_map)) {
@@ -1532,19 +1573,6 @@ class PointWiseScheduler : public SchedulerEntry {
       scheduler_debug_utils::canScheduleRejectReason(
           ScheduleHeuristic::PointWise, "no support for reduction ops");
       return false;
-    }
-
-    auto idx_sel_ops =
-        ir_utils::getIndexSelectOps(fusion);
-    if (!idx_sel_ops.empty()) {
-      for(auto idx_sel : idx_sel_ops) {
-        if (!idx_sel->as<IndexSelectOp>()->in1()->isFusionInput()) {
-          scheduler_debug_utils::canScheduleRejectReason(
-              ScheduleHeuristic::PointWise,
-              "no support index select op's input0 as consumer");
-          return false;
-        }
-      }
     }
 
     if (hasNonUniqueBcast(fusion)) {
@@ -1630,16 +1658,18 @@ class PersistentKernelScheduler : public SchedulerEntry {
       }
     }
 
-    auto idx_sel_ops =
-        ir_utils::getIndexSelectOps(fusion);
-    if (!idx_sel_ops.empty()) {
-      for(auto idx_sel : idx_sel_ops) {
-        if (!idx_sel->as<IndexSelectOp>()->in1()->isFusionInput()) {
-          scheduler_debug_utils::canScheduleRejectReason(
-              ScheduleHeuristic::PointWise,
-              "no support index select op's input0 as consumer");
-          return false;
-        }
+    for (auto idx_sel : ir_utils::getIndexSelectOps(fusion)) {
+      if (!idx_sel->input(0)->isFusionInput()) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Persistent,
+            "First input of IndexSelectOp must be fusion input.");
+        return false;
+      }
+      if (idx_sel->input(0)->uses().size() > 1) {
+        scheduler_debug_utils::canScheduleRejectReason(
+            ScheduleHeuristic::Persistent,
+            "First input of IndexSelectOp can only be used by IndexSelectOp");
+        return false;
       }
     }
 

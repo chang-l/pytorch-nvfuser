@@ -511,11 +511,11 @@ void IrPrinter::handle(const SelectOp* sop) {
            << ", index = " << sop->input(1) << " )\n";
 }
 
-void IrPrinter::handle(const IndexSelectOp* top) {
-  bool istvop = ir_utils::isTvOp(top);
+void IrPrinter::handle(const IndexSelectOp* sop) {
+  bool istvop = ir_utils::isTvOp(sop);
   if (!print_inline_) {
     indent();
-    os_ << top->out();
+    os_ << sop->output(0);
 
     // tensor operations tend to be long, break them up into multiple lines
     if (istvop) {
@@ -526,22 +526,22 @@ void IrPrinter::handle(const IndexSelectOp* top) {
 
     os_ << " = ";
   } else {
-    checkInlineable(top);
+    checkInlineable(sop);
   }
   os_ << "index select"
       << "(";
-  handle(top->in1());
+  handle(sop->input(0));
   if (istvop) {
     os_ << "\n";
     indent();
   }
-  os_ << ", " << top->in2();
+  os_ << ", " << sop->in2();
   if (istvop) {
     os_ << "\n";
     indent();
   }
   os_ << ", ";
-  handle(top->in3());
+  handle(sop->input(1));
   os_ << ")";
 
   if (istvop)

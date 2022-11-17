@@ -196,22 +196,23 @@ void IndexLowering::handle(const TernaryOp* top) {
   GpuLower::current()->propagateExprInfo(top, back());
 }
 
-void IndexLowering::handle(const IndexSelectOp* top) {
+void IndexLowering::handle(const IndexSelectOp* sop) {
   TORCH_CHECK(
-      top->in1()->isA<TensorView>(),
+      sop->input(0)->isA<TensorView>(),
       "index select's first input must be TensorView");
   TORCH_CHECK(
-      top->in1()->as<TensorView>()->domain() != nullptr,
+      sop->input(0)->as<TensorView>()->domain() != nullptr,
       "index select's first input's domian is nullptr");
-  auto lookup_extent = top->in1()->as<TensorView>()->domain()->lookupExtent();
-  const auto in1 = lowerSrcIndex(top->in1(), top->out());
-  const auto in2 = top->in2();
-  const auto in3 = lowerSrcIndex(top->in3(), top->out());
-  const auto out = lowerDstIndex(top->out());
+  auto lookup_extent =
+      sop->input(0)->as<TensorView>()->domain()->lookupExtent();
+  const auto in1 = lowerSrcIndex(sop->input(0), sop->output(0));
+  const auto in2 = sop->in2();
+  const auto in3 = lowerSrcIndex(sop->input(1), sop->output(0));
+  const auto out = lowerDstIndex(sop->output(0));
 
   pushBack(IrBuilder::create<IndexSelectOp>(
-      top->getIndexSelectOpType(), out, in1, in2, in3, lookup_extent));
-  GpuLower::current()->propagateExprInfo(top, back());
+      out, in1, in2, sop->getSelectAxis(), in3, lookup_extent));
+  GpuLower::current()->propagateExprInfo(sop, back());
 }
 
 void IndexLowering::handle(const SelectOp* sop) {

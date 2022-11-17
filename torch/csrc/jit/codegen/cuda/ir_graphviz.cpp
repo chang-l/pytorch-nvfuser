@@ -489,10 +489,10 @@ void IrGraphGenerator::handle(const IndexSelectOp* op) {
   printExpr(op, label.str());
 
   // inputs & outputs
-  addArc(op->in1(), op);
+  addArc(op->input(0), op);
   addArc(IrBuilder::create<Int>(op->in2()), op, "[color=blue]");
-  addArc(op->in3(), op, "[color=brown]");
-  addArc(op, op->out());
+  addArc(op->input(1), op, "[color=brown]");
+  addArc(op, op->output(0));
 }
 
 void IrGraphGenerator::handle(const RNGOp* op) {

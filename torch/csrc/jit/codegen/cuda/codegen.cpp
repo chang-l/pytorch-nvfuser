@@ -1064,20 +1064,20 @@ class CudaKernelGenerator : private OptOutConstDispatch {
   }
 
   // TODO(Feiwen): move lower index logic to lower_index.cpp
-  void handle(const IndexSelectOp* top) final {
-    auto lookup_var = varName(top->in1()->as<kir::TensorIndex>()->view());
-    int dim = top->in2();
-    auto idx_var = gen(top->in3());
-    const auto in1_view = top->in1()->as<kir::TensorIndex>()->view();
+  void handle(const IndexSelectOp* sop) final {
+    auto lookup_var = varName(sop->input(0)->as<kir::TensorIndex>()->view());
+    int dim = sop->in2();
+    auto idx_var = gen(sop->input(1));
+    const auto in1_view = sop->input(0)->as<kir::TensorIndex>()->view();
     int rank = in1_view->getRootDomain().size();
-    const auto out_view = top->out()->as<kir::TensorIndex>()->view();
-    const auto lookup_extent = top->lookup_extent();
+    const auto out_view = sop->output(0)->as<kir::TensorIndex>()->view();
+    const auto lookup_extent = sop->lookup_extent();
 
     // calc gtid
     std::stringstream ss;
-    ss << "(" << gen(top->in1()->as<kir::TensorIndex>()->index(0));
-    for (int i = 1; i < top->in1()->as<kir::TensorIndex>()->nDims(); ++i) {
-      ss << " + " << gen(top->in1()->as<kir::TensorIndex>()->index(i));
+    ss << "(" << gen(sop->input(0)->as<kir::TensorIndex>()->index(0));
+    for (int i = 1; i < sop->input(0)->as<kir::TensorIndex>()->nDims(); ++i) {
+      ss << " + " << gen(sop->input(0)->as<kir::TensorIndex>()->index(i));
     }
     ss << ")";
 
@@ -1101,8 +1101,8 @@ class CudaKernelGenerator : private OptOutConstDispatch {
 
     // generate code
     if (!print_inline_) {
-      indent() << gen(top->out());
-      if (!top->out()->isScalar()) {
+      indent() << gen(sop->output(0));
+      if (!sop->output(0)->isScalar()) {
         code_ << "\n";
         indent() << kTab;
       }
