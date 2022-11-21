@@ -287,7 +287,7 @@ struct SubstituteInExpr : public OptInDispatch {
     auto in1 = reference_->sameAs(idx_sel_expr->input(0))
         ? substitute_
         : idx_sel_expr->input(0);
-    int in2 = idx_sel_expr->in2();
+    int in2 = idx_sel_expr->dim();
     auto in3 = reference_->sameAs(idx_sel_expr->input(1))
         ? substitute_
         : idx_sel_expr->input(1);

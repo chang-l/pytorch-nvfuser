@@ -170,9 +170,23 @@ class CudaKernelGenerator : private OptOutConstDispatch {
   }
 
   void initStringStreamFormat(std::stringstream& ss) {
-    const int digits = std::numeric_limits<Double::ScalarType>::max_digits10;
     ss.imbue(std::locale("C"));
-    ss << std::scientific << std::setprecision(digits);
+    ss << std::scientific;
+    // Set the default precision as Double
+    setPrecision(ss, DataType::Double);
+  }
+
+  void setPrecision(std::stringstream& ss, DataType dtype) {
+    TORCH_INTERNAL_ASSERT(isFloatingPointType(dtype));
+    int digits = 0;
+    if (dtype == DataType::Float) {
+      digits = std::numeric_limits<float>::max_digits10;
+    } else if (dtype == DataType::Double) {
+      digits = std::numeric_limits<double>::max_digits10;
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unexpected floating point type: ", dtype);
+    }
+    ss << std::setprecision(digits);
   }
 
   // Generates the kernel function declaration
@@ -423,6 +437,7 @@ class CudaKernelGenerator : private OptOutConstDispatch {
       } else if (std::isnan(val)) {
         code_ << "NAN";
       } else {
+        setPrecision(code_, d->getDataType().value());
         code_ << val;
       }
     } else {
@@ -777,7 +792,7 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     // TODO: TORCH_INTERNAL_ASSERT that the scheduler correctly creates an
     // innermost ID of size 4 (float) or size 2 (double)?
     auto index = genTensorIndex(rop->getPhiloxIndex()->as<kir::TensorIndex>());
-    int multiple = rop->dtype() == DataType::Double ? 2 : 4;
+    int multiple = rop->getPhiloxMultiple();
     indent() << "nvfuser_index_t linear_index" << rop->name() << " = " << index
              << ";\n";
     indent() << "nvfuser_index_t rng_subseq" << rop->name() << " = linear_index"
@@ -804,6 +819,12 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     code_ << "(rng_result, rng_component" << rop->name();
     switch (op_type) {
       case RNGOpType::UniformRange: {
+        auto parameters = rop->getParameters();
+        TORCH_INTERNAL_ASSERT(parameters.size() == 2);
+        code_ << ", " << gen(parameters[0]) << ", " << gen(parameters[1]);
+        break;
+      }
+      case RNGOpType::NormalGeneral: {
         auto parameters = rop->getParameters();
         TORCH_INTERNAL_ASSERT(parameters.size() == 2);
         code_ << ", " << gen(parameters[0]) << ", " << gen(parameters[1]);
@@ -1968,10 +1989,14 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     ArgumentBuilder read_preds;
     ArgumentBuilder write_preds;
 
+    auto output_vals = grouped_gwop->outputVals();
+    auto input_vals = grouped_gwop->inputVals();
+    auto init_vals = grouped_gwop->initVals();
+
     for (const auto expr_index : c10::irange(grouped_gwop->numExprs())) {
-      const auto& output = grouped_gwop->outputVals().at(expr_index);
-      const auto& input = grouped_gwop->inputVals().at(expr_index);
-      const auto& init = grouped_gwop->initVals().at(expr_index);
+      const auto& output = output_vals.at(expr_index);
+      const auto& input = input_vals.at(expr_index);
+      const auto& init = init_vals.at(expr_index);
 
       for (const auto& group_index :
            c10::irange(index_replacement_maps.size())) {

@@ -150,7 +150,8 @@ void IrPrinter::handle(const TensorDomain* td) {
 }
 
 void IrPrinter::handle(const TensorView* tv) {
-  os_ << "T" << varName(tv);
+  static const std::string prefix = "T";
+  os_ << prefix << varName(tv);
   switch (tv->getMemoryType()) {
     case MemoryType::Global:
       os_ << "_g";
@@ -171,9 +172,30 @@ void IrPrinter::handle(const TensorView* tv) {
     os_ << tv->getComputeAtPosition();
     os_ << " )";
   }
+  if (tv->hasComputeWith()) {
+    os_ << " compute_with( ";
+    bool first = true;
+    if (tv->hasResolvedComputeWith()) {
+      for (auto consumer : tv->getComputeWithConsumers()) {
+        if (!first) {
+          os_ << ", ";
+        }
+        os_ << prefix << varName(consumer);
+        first = false;
+      }
+      os_ << ", ";
+    }
+    os_ << tv->getComputeWithPosition();
+    os_ << " )";
+  }
   if (tv->getMaxProducerPosition() > 0) {
     os_ << " produce_pos( ";
     os_ << tv->getMaxProducerPosition();
+    os_ << ")";
+  }
+  if (tv->getMaybeMaxProducerPosition() > tv->getMaxProducerPosition()) {
+    os_ << " maybe_produce_pos( ";
+    os_ << tv->getMaybeMaxProducerPosition();
     os_ << ")";
   }
 }
@@ -201,12 +223,19 @@ void IrPrinter::handle(const Double* d) {
   }
 
   if (d->isSymbolic()) {
-    os_ << "d" << varName(d);
+    os_ << typePrefix(d->getDataType().value()) << varName(d);
   } else {
-    os_ << "double("
-        << std::setprecision(
-               std::numeric_limits<Double::ScalarType>::max_digits10)
-        << *(d->value()) << ")";
+    os_ << d->getDataType().value() << "(";
+    if (d->getDataType() == DataType::Double) {
+      os_ << std::setprecision(std::numeric_limits<double>::max_digits10)
+          << *(d->value()) << ")";
+    } else if (d->getDataType() == DataType::Float) {
+      os_ << std::setprecision(std::numeric_limits<float>::max_digits10)
+          << (float)*(d->value()) << ")";
+    } else {
+      TORCH_INTERNAL_ASSERT(
+          false, "Invalid data type: ", d->getDataType().value());
+    }
   }
 }
 
@@ -512,43 +541,9 @@ void IrPrinter::handle(const SelectOp* sop) {
 }
 
 void IrPrinter::handle(const IndexSelectOp* sop) {
-  bool istvop = ir_utils::isTvOp(sop);
-  if (!print_inline_) {
-    indent();
-    os_ << sop->output(0);
-
-    // tensor operations tend to be long, break them up into multiple lines
-    if (istvop) {
-      os_ << "\n";
-      indent_size_++;
-      indent();
-    }
-
-    os_ << " = ";
-  } else {
-    checkInlineable(sop);
-  }
-  os_ << "index select"
-      << "(";
-  handle(sop->input(0));
-  if (istvop) {
-    os_ << "\n";
-    indent();
-  }
-  os_ << ", " << sop->in2();
-  if (istvop) {
-    os_ << "\n";
-    indent();
-  }
-  os_ << ", ";
-  handle(sop->input(1));
-  os_ << ")";
-
-  if (istvop)
-    indent_size_--;
-
-  if (!print_inline_)
-    os_ << ";\n";
+  indent() << sop->output(0) << "\n";
+  indent() << "   = index_select( " << sop->input(0) << ", dim = " << sop->dim()
+           << ", " << sop->input(1) << " )\n";
 }
 
 void IrPrinter::handle(const ReductionOp* rop) {

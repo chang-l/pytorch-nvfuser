@@ -119,14 +119,16 @@ Val* newScalar(ValType vtype, DataType dtype) {
       switch (dtype) {
         case DataType::Bool:
           return IrBuilder::create<Bool>();
-        case DataType::Double:
         case DataType::Float:
         case DataType::Half:
         case DataType::BFloat16:
-          return IrBuilder::create<Double>();
+          return IrBuilder::create<Double>(DataType::Float);
+        case DataType::Double:
+          return IrBuilder::create<Double>(DataType::Double);
         case DataType::Int32:
+          return IrBuilder::create<Int>(DataType::Int32);
         case DataType::Int:
-          return IrBuilder::create<Int>();
+          return IrBuilder::create<Int>(DataType::Int);
         case DataType::ComplexFloat:
         case DataType::ComplexDouble:
           return IrBuilder::create<ComplexDouble>();
@@ -580,6 +582,23 @@ TensorView* uniform(
                  .build();
   IrBuilder::create<RNGOp>(
       RNGOpType::UniformRange, out, dtype, std::vector<Val*>{low, high});
+  return out;
+}
+
+TensorView* normal(
+    const std::vector<Val*>& shape,
+    Val* mean,
+    Val* std,
+    DataType dtype) {
+  auto n = shape.size();
+  auto out = TensorViewBuilder()
+                 .ndims(n)
+                 .dtype(dtype)
+                 .contiguity(std::vector<bool>(n, true))
+                 .shape(shape)
+                 .build();
+  IrBuilder::create<RNGOp>(
+      RNGOpType::NormalGeneral, out, dtype, std::vector<Val*>{mean, std});
   return out;
 }
 
