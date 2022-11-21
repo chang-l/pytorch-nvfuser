@@ -856,9 +856,12 @@ void IndexLowering::handle(const GroupedWelfordOp* grouped_wop) {
   std::vector<WelfordTriplet> indexed_outputs(grouped_wop->numExprs());
   std::vector<WelfordTriplet> indexed_inputs(grouped_wop->numExprs());
 
+  auto output_vals = grouped_wop->outputVals();
+  auto input_vals = grouped_wop->inputVals();
+
   for (const auto i : c10::irange(grouped_wop->numExprs())) {
-    const auto& output = grouped_wop->outputVals().at(i);
-    const auto& input = grouped_wop->inputVals().at(i);
+    const auto& output = output_vals.at(i);
+    const auto& input = input_vals.at(i);
     WelfordTriplet indexed_output;
     WelfordTriplet indexed_input;
     for (const auto j : c10::irange(3)) {
@@ -1131,29 +1134,24 @@ void IndexLowering::allocateUniqueFusedReduction(
   }
 
   kir::AllocateFusedReduction* fused_reduction_alloc_reduction = nullptr;
-  switch (expr->getExprType().value()) {
-    case ExprType::GridReduction:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GridReduction>());
-      break;
-    case ExprType::GridWelford:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GridWelford>());
-      break;
-    case ExprType::GroupedGridReduction:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GroupedGridReduction>());
-      break;
-    case ExprType::GroupedGridWelford:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GroupedGridWelford>());
-      break;
-    default:
-      TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr->toString());
+  if (expr->isStrictlyA<kir::GridReduction>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GridReduction>());
+  } else if (expr->isStrictlyA<kir::GridWelford>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GridWelford>());
+  } else if (expr->isStrictlyA<kir::GroupedGridReduction>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GroupedGridReduction>());
+  } else if (expr->isStrictlyA<kir::GroupedGridWelford>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GroupedGridWelford>());
+  } else {
+    TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr->toString());
   }
 
   fused_reduction_map_.emplace(out_tv, fused_reduction_alloc_reduction);
