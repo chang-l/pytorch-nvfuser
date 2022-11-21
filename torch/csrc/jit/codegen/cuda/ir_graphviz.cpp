@@ -408,8 +408,8 @@ void IrGraphGenerator::handle(const TensorView* tv) {
   const bool is_output = outputs_.find(tv) != outputs_.end();
 
   const char* style = is_input ? "style=filled, fillcolor=palegreen"
-                               : is_output ? "style=filled, fillcolor=lightblue"
-                                           : "style=filled, fillcolor=beige";
+      : is_output              ? "style=filled, fillcolor=lightblue"
+                               : "style=filled, fillcolor=beige";
 
   graph_def_ << "    " << getid(tv) << " [label=\"" << label.str()
              << "\", shape=Mrecord, color=brown, " << style << "];\n";
