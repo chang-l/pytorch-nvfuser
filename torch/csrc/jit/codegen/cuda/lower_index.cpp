@@ -197,21 +197,15 @@ void IndexLowering::handle(const TernaryOp* top) {
 }
 
 void IndexLowering::handle(const IndexSelectOp* sop) {
-  TORCH_CHECK(
-      sop->input(0)->isA<TensorView>(),
-      "index select's first input must be TensorView");
-  TORCH_CHECK(
-      sop->input(0)->as<TensorView>()->domain() != nullptr,
-      "index select's first input's domian is nullptr");
-  auto lookup_extent =
-      sop->input(0)->as<TensorView>()->domain()->lookupExtent();
-  const auto in1 = lowerSrcIndex(sop->input(0), sop->output(0));
-  const auto in2 = sop->in2();
-  const auto in3 = lowerSrcIndex(sop->input(1), sop->output(0));
-  const auto out = lowerDstIndex(sop->output(0));
+  const auto indices = lowerSrcIndex(sop->input(1), sop->output(0));
+  const std::unordered_map<IterDomain*, Val*> override_index = {
+      {sop->getSelectAxis(), indices}};
+  const auto lookup =
+      lowerSrcIndex(sop->input(0), sop->output(0), override_index);
 
+  const auto out = lowerDstIndex(sop->output(0));
   pushBack(IrBuilder::create<IndexSelectOp>(
-      out, in1, in2, sop->getSelectAxis(), in3, lookup_extent));
+      out, lookup, sop->in2(), sop->getSelectAxis(), indices));
   GpuLower::current()->propagateExprInfo(sop, back());
 }
 

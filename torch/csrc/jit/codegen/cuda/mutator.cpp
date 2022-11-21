@@ -106,11 +106,6 @@ void OptOutMutator::mutate(TensorDomain* td) {
 
   Val* mutated_val = IrBuilder::create<TensorDomain>(
       td->container(), root_dom, rfactor_dom, domain, td->contiguity());
-  // if original TensorDomain contains lookup_extent, copy to new TensorDomain
-  // it is for index select
-  if (td->lookupExtent() != nullptr) {
-    mutated_val->as<TensorDomain>()->setLookupExtent(td->lookupExtent());
-  }
   registerMutation(td, mutated_val);
 }
 

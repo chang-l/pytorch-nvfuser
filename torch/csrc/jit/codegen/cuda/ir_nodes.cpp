@@ -265,16 +265,11 @@ IndexSelectOp::IndexSelectOp(
     Val* in1,
     int dim,
     IterDomain* select_id,
-    Val* in3,
-    Val* lookup_ext)
-    : Expr(passkey), in2_{dim}, select_id_{select_id}, lookup_ext_{lookup_ext} {
+    Val* in3)
+    : Expr(passkey), in2_{dim}, select_id_{select_id} {
   addOutput(out);
   addInput(in1);
   addInput(in3);
-
-  if (input(0)->isA<TensorView>()) {
-    input(0)->as<TensorView>()->setAsLookupTV(dim);
-  }
 }
 
 IndexSelectOp::IndexSelectOp(const IndexSelectOp* src, IrCloner* ir_cloner)
@@ -2353,31 +2348,6 @@ bool TensorDomain::hasRFactor() const {
   return !rfactor_domain_.empty();
 }
 
-bool TensorDomain::hasLookup() const {
-  return hasLookupInDomain() || hasLookupInRootDomain() ||
-      hasLookupInRootDomain();
-}
-
-bool TensorDomain::hasLookupInDomain() const {
-  return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
-    return id->isLookupIterType();
-  });
-}
-
-bool TensorDomain::hasLookupInRootDomain() const {
-  return std::any_of(
-      root_domain_.begin(), root_domain_.end(), [](IterDomain* id) {
-        return id->isLookupIterType();
-      });
-}
-
-bool TensorDomain::hasLookupInRfactorDomain() const {
-  return std::any_of(
-      rfactor_domain_.begin(), rfactor_domain_.end(), [](IterDomain* id) {
-        return id->isLookupIterType();
-      });
-}
-
 bool TensorDomain::hasViewLikeRFactor() const {
   if (!hasRFactor()) {
     // Can't have view like rfactor if there is no rfactor domain
@@ -2747,12 +2717,10 @@ Split::Split(
       in_{in},
       factor_{factor},
       inner_split_{inner_split},
-      start_offset_{
-          start_offset != nullptr ? start_offset
-                                  : passkey.ir_container_->zeroVal()},
-      stop_offset_{
-          stop_offset != nullptr ? stop_offset
-                                 : passkey.ir_container_->zeroVal()} {
+      start_offset_{start_offset != nullptr ? start_offset
+                                            : passkey.ir_container_->zeroVal()},
+      stop_offset_{stop_offset != nullptr ? stop_offset
+                                          : passkey.ir_container_->zeroVal()} {
   TORCH_INTERNAL_ASSERT(
       factor_->isAnInt(),
       "Attempted to create a Split node with a non-integer factor.");

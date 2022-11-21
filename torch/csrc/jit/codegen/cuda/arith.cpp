@@ -544,7 +544,6 @@ TensorView* index_select(TensorView* lookup_tv, int dim, TensorView* index_tv) {
       new_root, TensorDomain::getContiguousContiguity(new_root));
   auto out = IrBuilder::create<TensorView>(td, dtype);
 
-  lookup_tv->setAsLookupTV(dim);
   // broadcast index to lookup's rank.
   index_tv = maybe_broadcast_idxtv_inner_outter_to_rank(
       index_tv->as<TensorView>(), dim, n_dims);

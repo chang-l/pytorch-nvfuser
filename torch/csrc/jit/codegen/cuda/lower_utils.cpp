@@ -477,19 +477,6 @@ class ReplaceExprInput : private kir::ExprMutator {
     return;
   }
 
-  void handle(IndexSelectOp* node) final {
-    auto replaced_inputs = getMaybeInputReplacementMap(node);
-    if (replaced_inputs.has_value()) {
-      auto replacement = IrBuilder::create<IndexSelectOp>(
-          node->output(0),
-          replaced_inputs.value().at(node->input(0)),
-          node->in2(),
-          node->getSelectAxis(),
-          replaced_inputs.value().at(node->input(1)));
-      registerReplaceWithPredicate(node, replacement);
-    }
-  }
-
   void handle(ReductionOp* node) final {
     auto replaced_inputs = getMaybeInputReplacementMap(node);
     if (replaced_inputs.has_value()) {

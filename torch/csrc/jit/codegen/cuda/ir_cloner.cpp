@@ -118,20 +118,6 @@ void IrCloner::handle(const SelectOp* op) {
 
 void IrCloner::handle(const IndexSelectOp* op) {
   clone_ = IrBuilder::clone(op, this);
-  TORCH_CHECK(
-      op->input(0)->isA<TensorView>(),
-      "index select's first input must be TensorView");
-  auto in1_tv = op->input(0)->as<TensorView>();
-  auto lookup_extent = in1_tv->domain()->lookupExtent();
-  if (lookup_extent != nullptr) {
-    clone_->as<IndexSelectOp>()
-        ->input(0)
-        ->as<TensorView>()
-        ->domain()
-        ->setLookupExtent(lookup_extent);
-  }
-  clone_->as<IndexSelectOp>()->input(0)->as<TensorView>()->setAsLookupTV(
-      op->in2());
 }
 
 void IrCloner::handle(const RNGOp* op) {

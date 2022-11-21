@@ -1115,6 +1115,30 @@ bool isSelectInput(TensorView* tv) {
   return false;
 }
 
+bool isIndexSelectLookupTv(const TensorView* tv) {
+  for (auto expr : tv->uses()) {
+    if (expr->isA<IndexSelectOp>()) {
+      auto idx_sel = expr->as<IndexSelectOp>();
+      if (idx_sel->input(0) == tv) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool isIndexSelectIndicesTv(const TensorView* tv) {
+  for (auto expr : tv->uses()) {
+    if (expr->isA<IndexSelectOp>()) {
+      auto idx_sel = expr->as<IndexSelectOp>();
+      if (idx_sel->input(1) == tv) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 } // namespace ir_utils
 } // namespace cuda
 } // namespace fuser
