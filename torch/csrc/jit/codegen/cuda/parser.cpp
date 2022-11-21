@@ -1534,6 +1534,7 @@ class IrParser {
               auto index = list_val.front();
               list_val.pop_front();
               Val* out = nullptr;
+              TORCH_INTERNAL_ASSERT(false, "index_select is not implemented");
               // TODO(Feiwen): uncomment following lines once backend PR meraged
               // index_select is defined in backend PR
               /*

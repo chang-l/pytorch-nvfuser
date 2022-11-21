@@ -1290,6 +1290,7 @@ struct IndexSelectOpRecord : RecordFunctor {
         fd.getFusionState(args_.at(1).index)->template as<Nvf::TensorView>();
 
     Nvf::Val* output = nullptr;
+    TORCH_INTERNAL_ASSERT(false, "index_select is not implemented");
     // TODO(Feiwen): uncomment following lines once backend PR meraged
     // index_select is defined in backend PR
     // output = Nvf::index_select(arg1, dim_, arg3);
