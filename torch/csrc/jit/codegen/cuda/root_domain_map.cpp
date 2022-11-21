@@ -93,6 +93,11 @@ std::unordered_map<IterDomain*, IterDomain*> PairwiseRootDomainMap::map(
   if (SelectOp* sop = dynamic_cast<SelectOp*>(consumer_tv_->definition())) {
     selected_id = sop->getSelectAxis();
   }
+  IterDomain* idx_selected_id = nullptr;
+  if (IndexSelectOp* sop =
+          dynamic_cast<IndexSelectOp*>(consumer_tv_->definition())) {
+    idx_selected_id = sop->getSelectAxis();
+  }
 
   std::unordered_map<IterDomain*, IterDomain*> dom_map;
   const auto producer_root =
@@ -107,6 +112,11 @@ std::unordered_map<IterDomain*, IterDomain*> PairwiseRootDomainMap::map(
     // mapping for it.
     if (producer_id == selected_id) {
       itp++;
+      continue;
+    }
+    if (producer_id == idx_selected_id) {
+      itp++;
+      itc++;
       continue;
     }
 
@@ -526,9 +536,6 @@ bool ComputeAtRootDomainMap::canMap(
   // except when a id_b concrete is broadcast.
   const bool key_a_bcast =
       key_a.concreteId() && key_a.concreteId()->isBroadcast();
-  const bool key_a_reduction =
-      (key_a.concreteId() && key_a.concreteId()->isReduction()) ||
-      key_a.id()->isReduction();
   bool mappable_pair_found = false;
   for (const auto& key_b : getConcretizedKeys(td_b, id_b)) {
     const bool mappable = canMap(key_a, key_b);
@@ -764,7 +771,7 @@ void ComputeAtRootDomainMapBuilder::initializeBcastMap(
   TORCH_INTERNAL_ASSERT(
       tv->isFusionOutput() || ir_utils::isSqueezeInput(tv) ||
           tv->definition()->outputs().size() > 1 ||
-          tv->isDefinitionType(ExprType::ViewOp),
+          tv->isDefinitionType<ViewOp>(),
       "Invalid tensor to initialize bcast map t",
       tv->name(),
       " in tensor ",
@@ -895,8 +902,8 @@ void ComputeAtRootDomainMapBuilder::mapPointwiseOrReductionOp(Expr* e) {
   }
 
   // Broadcast is handled separately, so e should never be BroadcastOp.
-  TORCH_INTERNAL_ASSERT(e->getExprType() != ExprType::BroadcastOp);
-  TORCH_INTERNAL_ASSERT(e->getExprType() != ExprType::SqueezeOp);
+  TORCH_INTERNAL_ASSERT(!e->isA<BroadcastOp>());
+  TORCH_INTERNAL_ASSERT(!e->isA<SqueezeOp>());
 
   TORCH_INTERNAL_ASSERT(e->outputs().size() >= 1);
   const TensorView* out_tv = e->output(0)->as<TensorView>();
@@ -923,52 +930,13 @@ void ComputeAtRootDomainMapBuilder::mapPointwiseOrReductionOp(Expr* e) {
             e->isA<WelfordOp>() || e->isA<GroupedReductionOp>() ||
                 e->isA<GroupedWelfordOp>(),
             "Unknown multi-output Expr type ",
-            e->getExprType().value(),
+            e->getOpString(),
             " is found");
         for (auto out : e->outputs()) {
           auto out_tv = out->as<TensorView>();
           auto out_td = out_tv->domain();
           auto out_root = out_td->getRootDomain();
           setMaybeMapped(in_td, in_root[it], out_td, out_root[it]);
-        }
-      } else {
-        setMaybeMapped(in_td, in_root[it], out_td, out_root[it]);
-      }
-    }
-  }
-}
-
-void ComputeAtRootDomainMapBuilder::mapIndexSelectOp(Expr* e) {
-  if (e->output(0)->getValType() != ValType::TensorView) {
-    return;
-  }
-
-  // Broadcast is handled separately, so e should never be BroadcastOp.
-  TORCH_INTERNAL_ASSERT(e->getExprType() != ExprType::BroadcastOp);
-
-  TORCH_INTERNAL_ASSERT(e->outputs().size() >= 1);
-  const TensorView* out_tv = e->output(0)->as<TensorView>();
-  const TensorDomain* out_td = out_tv->domain();
-  const auto& out_root = out_td->getRootDomain();
-
-  // Record equalities from output to all the inputs
-  // ignores un-concretizable broadcasts
-  for (auto* in_tv : ir_utils::filterByType<TensorView>(e->inputs())) {
-    const TensorDomain* in_td = in_tv->domain();
-    std::vector<IterDomain*> in_root =
-        TensorDomain::noReductions(in_tv->getMaybeRFactorDomain());
-    for (const auto it : c10::irange(in_root.size())) {
-      if (e->outputs().size() > 1) {
-        TORCH_INTERNAL_ASSERT(
-            e->isA<WelfordOp>() || e->isA<GroupedReductionOp>(),
-            "Multi-output mapping assumes WelforddOp or GroupedReductionOp but, ",
-            e->getExprType().value(),
-            " is found");
-        for (auto o : e->outputs()) {
-          auto o_tv = o->as<TensorView>();
-          auto o_td = o_tv->domain();
-          auto o_root = o_td->getRootDomain();
-          setMaybeMapped(in_td, in_root[it], o_td, o_root[it]);
         }
       } else {
         setMaybeMapped(in_td, in_root[it], out_td, out_root[it]);

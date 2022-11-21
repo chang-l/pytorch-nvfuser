@@ -196,22 +196,17 @@ void IndexLowering::handle(const TernaryOp* top) {
   GpuLower::current()->propagateExprInfo(top, back());
 }
 
-void IndexLowering::handle(const IndexSelectOp* top) {
-  TORCH_CHECK(
-      top->in1()->isA<TensorView>(),
-      "index select's first input must be TensorView");
-  TORCH_CHECK(
-      top->in1()->as<TensorView>()->domain() != nullptr,
-      "index select's first input's domian is nullptr");
-  auto lookup_extent = top->in1()->as<TensorView>()->domain()->lookupExtent();
-  const auto in1 = lowerSrcIndex(top->in1(), top->out());
-  const auto in2 = top->in2();
-  const auto in3 = lowerSrcIndex(top->in3(), top->out());
-  const auto out = lowerDstIndex(top->out());
+void IndexLowering::handle(const IndexSelectOp* sop) {
+  const auto indices = lowerSrcIndex(sop->input(1), sop->output(0));
+  const std::unordered_map<IterDomain*, Val*> override_index = {
+      {sop->getSelectAxis(), indices}};
+  const auto lookup =
+      lowerSrcIndex(sop->input(0), sop->output(0), override_index);
 
+  const auto out = lowerDstIndex(sop->output(0));
   pushBack(IrBuilder::create<IndexSelectOp>(
-      top->getIndexSelectOpType(), out, in1, in2, in3, lookup_extent));
-  GpuLower::current()->propagateExprInfo(top, back());
+      out, lookup, sop->dim(), sop->getSelectAxis(), indices));
+  GpuLower::current()->propagateExprInfo(sop, back());
 }
 
 void IndexLowering::handle(const SelectOp* sop) {
@@ -874,9 +869,12 @@ void IndexLowering::handle(const GroupedWelfordOp* grouped_wop) {
   std::vector<WelfordTriplet> indexed_outputs(grouped_wop->numExprs());
   std::vector<WelfordTriplet> indexed_inputs(grouped_wop->numExprs());
 
+  auto output_vals = grouped_wop->outputVals();
+  auto input_vals = grouped_wop->inputVals();
+
   for (const auto i : c10::irange(grouped_wop->numExprs())) {
-    const auto& output = grouped_wop->outputVals().at(i);
-    const auto& input = grouped_wop->inputVals().at(i);
+    const auto& output = output_vals.at(i);
+    const auto& input = input_vals.at(i);
     WelfordTriplet indexed_output;
     WelfordTriplet indexed_input;
     for (const auto j : c10::irange(3)) {
@@ -1149,29 +1147,24 @@ void IndexLowering::allocateUniqueFusedReduction(
   }
 
   kir::AllocateFusedReduction* fused_reduction_alloc_reduction = nullptr;
-  switch (expr->getExprType().value()) {
-    case ExprType::GridReduction:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GridReduction>());
-      break;
-    case ExprType::GridWelford:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GridWelford>());
-      break;
-    case ExprType::GroupedGridReduction:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GroupedGridReduction>());
-      break;
-    case ExprType::GroupedGridWelford:
-      fused_reduction_alloc_reduction =
-          IrBuilder::create<kir::AllocateFusedReduction>(
-              expr->as<kir::GroupedGridWelford>());
-      break;
-    default:
-      TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr->toString());
+  if (expr->isStrictlyA<kir::GridReduction>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GridReduction>());
+  } else if (expr->isStrictlyA<kir::GridWelford>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GridWelford>());
+  } else if (expr->isStrictlyA<kir::GroupedGridReduction>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GroupedGridReduction>());
+  } else if (expr->isStrictlyA<kir::GroupedGridWelford>()) {
+    fused_reduction_alloc_reduction =
+        IrBuilder::create<kir::AllocateFusedReduction>(
+            expr->as<kir::GroupedGridWelford>());
+  } else {
+    TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr->toString());
   }
 
   fused_reduction_map_.emplace(out_tv, fused_reduction_alloc_reduction);

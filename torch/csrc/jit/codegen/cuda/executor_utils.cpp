@@ -836,15 +836,12 @@ void bindInputForExprEvaluation(
           }
         }
 
-        auto value =
+        const auto value =
             root_domain[dim]->hasExpandedExtent() ? 1 : tensor_arg_size;
         bool should_bind = true;
         if (check_consistency) {
           const auto prev_value = expr_eval.evaluate(extent);
           if (prev_value.has_value()) {
-            if (cg_tensor->isLookupTV()) {
-              value = int64_t(*prev_value);
-            }
             TORCH_CHECK(
                 *prev_value == value,
                 "Attempting to bind ",

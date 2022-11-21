@@ -283,6 +283,26 @@ struct SubstituteInExpr : public OptInDispatch {
         index);
   }
 
+  void handle(IndexSelectOp* idx_sel_expr) final {
+    auto in1 = reference_->sameAs(idx_sel_expr->input(0))
+        ? substitute_
+        : idx_sel_expr->input(0);
+    int in2 = idx_sel_expr->dim();
+    auto in3 = reference_->sameAs(idx_sel_expr->input(1))
+        ? substitute_
+        : idx_sel_expr->input(1);
+    auto out = reference_->sameAs(idx_sel_expr->output(0))
+        ? substitute_
+        : idx_sel_expr->output(0);
+    expr_ = IrBuilder::create<IndexSelectOp>(
+        idx_sel_expr->container(),
+        out,
+        in1,
+        in2,
+        idx_sel_expr->getSelectAxis(),
+        in3);
+  }
+
   void handle(RNGOp* rng_expr) final {
     std::vector<Val*> subsituted_params;
     for (auto v : rng_expr->getParameters()) {
@@ -298,23 +318,6 @@ struct SubstituteInExpr : public OptInDispatch {
         subsituted_params,
         rng_expr->getRNGOffset(),
         rng_expr->getPhiloxIndex());
-  }
-
-  void handle(IndexSelectOp* idx_sel_expr) final {
-    auto in1 = reference_->sameAs(idx_sel_expr->in1()) ? substitute_
-                                                       : idx_sel_expr->in1();
-    int in2 = idx_sel_expr->in2();
-    auto in3 = reference_->sameAs(idx_sel_expr->in3()) ? substitute_
-                                                       : idx_sel_expr->in3();
-    auto out = reference_->sameAs(idx_sel_expr->out()) ? substitute_
-                                                       : idx_sel_expr->out();
-    expr_ = IrBuilder::create<IndexSelectOp>(
-        idx_sel_expr->container(),
-        idx_sel_expr->getIndexSelectOpType(),
-        out,
-        in1,
-        in2,
-        in3);
   }
 
   void handle(ReductionOp* reduction_expr) final {
@@ -781,29 +784,15 @@ std::vector<Expr*> getReductionOps(Fusion* fusion) {
   return red_ops;
 }
 
-std::vector<Expr*> getIndexSelectOps(Fusion* fusion) {
-  std::vector<Expr*> idx_sel_ops;
-
-  auto isIndexSelect = [](Val* in_val) {
-    if (in_val == nullptr || !in_val->isA<TensorView>()) {
-      return false;
-    }
-    auto in_tv = in_val->as<TensorView>();
-    return std::any_of(
-        in_tv->getRootDomain().begin(),
-        in_tv->getRootDomain().end(),
-        [](IterDomain* id) { return id->isLookupIterType(); });
-  };
+std::vector<IndexSelectOp*> getIndexSelectOps(Fusion* fusion) {
+  std::vector<IndexSelectOp*> idx_sel_ops;
 
   for (auto expr : fusion->exprs()) {
-    bool is_idx_sel = false;
     if (expr->isA<IndexSelectOp>()) {
-      is_idx_sel = isIndexSelect(expr->as<IndexSelectOp>()->in1());
-    }
-    if (is_idx_sel) {
-      idx_sel_ops.push_back(expr);
+      idx_sel_ops.push_back(expr->as<IndexSelectOp>());
     }
   }
+
   return idx_sel_ops;
 }
 
@@ -929,9 +918,13 @@ Val* getReductionInitValOf(TensorView* tv) {
 // reduction?
 bool isReductionOp(const Expr* expr) {
   // Note that GridReduction inherits ReductionOp
-  return expr->isA<ReductionOp>() || expr->isA<GroupedReductionOp>() ||
-      expr->isA<WelfordOp>() || expr->isA<GroupedWelfordOp>() ||
-      expr->isA<kir::GridWelford>() || expr->isA<kir::GroupedGridWelford>();
+  return expr->isOneOf<
+      ReductionOp,
+      GroupedReductionOp,
+      WelfordOp,
+      GroupedWelfordOp,
+      kir::GridWelford,
+      kir::GroupedGridWelford>();
 }
 
 bool isReductionTvOp(const Expr* expr) {
@@ -1006,17 +999,10 @@ struct ReplaceValInIndexVal : public OptInDispatch {
     // Recursively traverse its defining expr
     auto def = val->definition();
     if (def != nullptr) {
-      switch (def->etype()) {
-        case ExprType::UnaryOp:
-        case ExprType::BinaryOp:
-        case ExprType::TernaryOp:
-        case ExprType::Swizzle2DInt:
-        case ExprType::PairSelect:
-          handle(val->definition());
-          break;
-        default:
-          TORCH_INTERNAL_ASSERT(
-              false, "Unexpected definition: ", def->toString())
+      if (def->isOneOf<UnaryOp, BinaryOp, TernaryOp>()) {
+        handle(val->definition());
+      } else {
+        TORCH_INTERNAL_ASSERT(false, "Unexpected definition: ", def->toString())
       }
       // last_visited_val_ is set in the expr handlers
     } else {
@@ -1124,6 +1110,30 @@ bool isSelectInput(TensorView* tv) {
   for (auto expr : tv->uses()) {
     if (expr->isA<SelectOp>()) {
       return true;
+    }
+  }
+  return false;
+}
+
+bool isIndexSelectLookupTv(const TensorView* tv) {
+  for (auto expr : tv->uses()) {
+    if (expr->isA<IndexSelectOp>()) {
+      auto idx_sel = expr->as<IndexSelectOp>();
+      if (idx_sel->input(0) == tv) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool isIndexSelectIndicesTv(const TensorView* tv) {
+  for (auto expr : tv->uses()) {
+    if (expr->isA<IndexSelectOp>()) {
+      auto idx_sel = expr->as<IndexSelectOp>();
+      if (idx_sel->input(1) == tv) {
+        return true;
+      }
     }
   }
   return false;

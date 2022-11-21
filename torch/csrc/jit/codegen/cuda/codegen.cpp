@@ -10,6 +10,8 @@
 #include <array>
 #include <cmath>
 #include <sstream>
+#include <typeindex>
+#include <typeinfo>
 #include <vector>
 
 namespace torch {
@@ -120,20 +122,20 @@ class ExprFinder : kir::ConstIrVisitor {
   //! expr_types
   static bool exists(
       const Expr* expr,
-      const std::unordered_set<ExprType>& expr_types) {
+      const std::unordered_set<std::type_index>& expr_types) {
     ExprFinder finder(expr_types);
     finder.handle(std::vector<const Expr*>{expr});
     return finder.is_found_;
   }
 
  private:
-  ExprFinder(const std::unordered_set<ExprType>& expr_types)
+  ExprFinder(const std::unordered_set<std::type_index>& expr_types)
       : expr_types_(expr_types) {}
 
   using kir::ConstIrVisitor::handle;
 
   void handle(const Expr* expr) final {
-    if (expr_types_.find(expr->etype()) != expr_types_.end()) {
+    if (expr_types_.find(typeid(*expr)) != expr_types_.end()) {
       is_found_ = true;
       return;
     }
@@ -141,7 +143,7 @@ class ExprFinder : kir::ConstIrVisitor {
   }
 
  private:
-  const std::unordered_set<ExprType>& expr_types_;
+  const std::unordered_set<std::type_index>& expr_types_;
   bool is_found_ = false;
 };
 
@@ -168,9 +170,23 @@ class CudaKernelGenerator : private OptOutConstDispatch {
   }
 
   void initStringStreamFormat(std::stringstream& ss) {
-    const int digits = std::numeric_limits<Double::ScalarType>::max_digits10;
     ss.imbue(std::locale("C"));
-    ss << std::scientific << std::setprecision(digits);
+    ss << std::scientific;
+    // Set the default precision as Double
+    setPrecision(ss, DataType::Double);
+  }
+
+  void setPrecision(std::stringstream& ss, DataType dtype) {
+    TORCH_INTERNAL_ASSERT(isFloatingPointType(dtype));
+    int digits = 0;
+    if (dtype == DataType::Float) {
+      digits = std::numeric_limits<float>::max_digits10;
+    } else if (dtype == DataType::Double) {
+      digits = std::numeric_limits<double>::max_digits10;
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unexpected floating point type: ", dtype);
+    }
+    ss << std::setprecision(digits);
   }
 
   // Generates the kernel function declaration
@@ -421,6 +437,7 @@ class CudaKernelGenerator : private OptOutConstDispatch {
       } else if (std::isnan(val)) {
         code_ << "NAN";
       } else {
+        setPrecision(code_, d->getDataType().value());
         code_ << val;
       }
     } else {
@@ -775,7 +792,7 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     // TODO: TORCH_INTERNAL_ASSERT that the scheduler correctly creates an
     // innermost ID of size 4 (float) or size 2 (double)?
     auto index = genTensorIndex(rop->getPhiloxIndex()->as<kir::TensorIndex>());
-    int multiple = rop->dtype() == DataType::Double ? 2 : 4;
+    int multiple = rop->getPhiloxMultiple();
     indent() << "nvfuser_index_t linear_index" << rop->name() << " = " << index
              << ";\n";
     indent() << "nvfuser_index_t rng_subseq" << rop->name() << " = linear_index"
@@ -802,6 +819,12 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     code_ << "(rng_result, rng_component" << rop->name();
     switch (op_type) {
       case RNGOpType::UniformRange: {
+        auto parameters = rop->getParameters();
+        TORCH_INTERNAL_ASSERT(parameters.size() == 2);
+        code_ << ", " << gen(parameters[0]) << ", " << gen(parameters[1]);
+        break;
+      }
+      case RNGOpType::NormalGeneral: {
         auto parameters = rop->getParameters();
         TORCH_INTERNAL_ASSERT(parameters.size() == 2);
         code_ << ", " << gen(parameters[0]) << ", " << gen(parameters[1]);
@@ -1038,82 +1061,18 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     }
   }
 
-  // (1 * tv.extent[dim] * tv.extent[dim + 1] * ... * tv.extent[rank - 1])
-  std::string genMulExtString(
-      const TensorView* tv,
-      const int dim,
-      const int rank,
-      const int lookup_dim = -1,
-      const Val* lookup_extent = nullptr) {
-    std::stringstream s;
-    s << "(1";
-    for (int idx = dim; idx < rank; ++idx) {
-      if (lookup_dim == idx) {
-        TORCH_CHECK(
-            lookup_extent->isA<NamedScalar>(),
-            "lookup_extent type must be NamedScalar");
-        s << " * " << lookup_extent->as<NamedScalar>()->toString();
-      } else {
-        s << " * " << tv->getRootDomain()[idx]->extent()->toString();
-      }
-    }
-    s << ")";
-    return s.str();
-  }
-
-  // TODO(Feiwen): move lower index logic to lower_index.cpp
-  void handle(const IndexSelectOp* top) final {
-    auto lookup_var = varName(top->in1()->as<kir::TensorIndex>()->view());
-    int dim = top->in2();
-    auto idx_var = gen(top->in3());
-    const auto in1_view = top->in1()->as<kir::TensorIndex>()->view();
-    int rank = in1_view->getRootDomain().size();
-    const auto out_view = top->out()->as<kir::TensorIndex>()->view();
-    const auto lookup_extent = top->lookup_extent();
-
-    // calc gtid
-    std::stringstream ss;
-    ss << "(" << gen(top->in1()->as<kir::TensorIndex>()->index(0));
-    for (int i = 1; i < top->in1()->as<kir::TensorIndex>()->nDims(); ++i) {
-      ss << " + " << gen(top->in1()->as<kir::TensorIndex>()->index(i));
-    }
-    ss << ")";
-
-    // calc base addr
-    std::string base = "";
-    if (dim > 0) {
-      std::string lut_exts =
-          genMulExtString(in1_view, dim, rank, dim, lookup_extent);
-      std::string out_exts = genMulExtString(out_view, dim, rank);
-      base = "(" + ss.str() + " / " + out_exts + ") * " + lut_exts + " + ";
-    }
-
-    // calc index offset
-    TORCH_CHECK(
-        rank > 1, "input_0 of IndexSelectOp must be > 1, but gets", rank);
-    std::string extents = genMulExtString(in1_view, dim + 1, rank);
-    std::string idx_offset = idx_var + " * " + extents;
-
-    // calc feat offset
-    std::string feat_offset = ss.str() + " % " + extents;
-
+  void handle(const IndexSelectOp* sop) final {
     // generate code
     if (!print_inline_) {
-      indent() << gen(top->out());
-      if (!top->out()->isScalar()) {
+      indent() << gen(sop->output(0));
+      if (!sop->output(0)->isScalar()) {
         code_ << "\n";
         indent() << kTab;
       }
       code_ << " = ";
     }
 
-    code_ << lookup_var << "[" << base << idx_offset << " + " << feat_offset
-          << "]"
-          << ";\n";
-
-    // if (!print_inline_) {
-    // code_ << ";\n";
-    // }
+    code_ << gen(sop->input(0)) << ";\n";
   }
 
   std::string genArchString(MmaOptions::MacroType macro) {
@@ -2030,10 +1989,14 @@ class CudaKernelGenerator : private OptOutConstDispatch {
     ArgumentBuilder read_preds;
     ArgumentBuilder write_preds;
 
+    auto output_vals = grouped_gwop->outputVals();
+    auto input_vals = grouped_gwop->inputVals();
+    auto init_vals = grouped_gwop->initVals();
+
     for (const auto expr_index : c10::irange(grouped_gwop->numExprs())) {
-      const auto& output = grouped_gwop->outputVals().at(expr_index);
-      const auto& input = grouped_gwop->inputVals().at(expr_index);
-      const auto& init = grouped_gwop->initVals().at(expr_index);
+      const auto& output = output_vals.at(expr_index);
+      const auto& input = input_vals.at(expr_index);
+      const auto& init = init_vals.at(expr_index);
 
       for (const auto& group_index :
            c10::irange(index_replacement_maps.size())) {
@@ -2370,13 +2333,12 @@ class CudaKernelGenerator : private OptOutConstDispatch {
         ReductionParallelTypeState::Inactive);
 
     for (const ParallelType pt : kParallelTypeThreads) {
-      // It may be better to predicate grid reductions on dimensions they
-      // don't actively use, however since that should generally be
-      // discouraged (they should be part of the iter portion of the
-      // operation, or they should be predciated out) we're just going to
-      // assume they're part of the iter dimension. This would cause more
-      // communication than strictly necessary but should not be a common use
-      // case.
+      // It may be better to predicate grid reductions on dimensions they don't
+      // actively use, however since that should generally be discouraged (they
+      // should be part of the iter portion of the operation, or they should be
+      // predciated out) we're just going to assume they're part of the iter
+      // dimension. This would cause more communication than strictly necessary
+      // but should not be a common use case.
       auto pt_dim = kernel_->summary().parallel_dimension_map_.get(pt);
       if (pt_dim == nullptr || pt_dim->isOneInt()) {
         continue;
@@ -2494,7 +2456,8 @@ class CudaKernelGenerator : private OptOutConstDispatch {
       return false;
     }
     return ExprFinder::exists(
-        loop, {ExprType::GroupedGridReduction, ExprType::GroupedGridWelford});
+        loop,
+        {typeid(kir::GroupedGridReduction), typeid(kir::GroupedGridWelford)});
   }
 
   void handle(const kir::ForLoop* loop) final {
@@ -2534,13 +2497,12 @@ class CudaKernelGenerator : private OptOutConstDispatch {
       code_ << " = " << gen_start << "; ";
     } else {
       // Do not start at  the start of the ID when not parallelized. Instead,
-      // start at 0. Predicates will protect buffers between 0 and
-      // ID->start(), however if we started at ID->start and extent ==
-      // ID->start, we could have a "degenerate" loop (loop with no
-      // iterations). It may not be an issue to have a 0-sized loop, but all
-      // potential consequences haven't been covered. One example is WAR
-      // analysis which could incorrectly think a barrier inside a 0-sized
-      // loop actually provides protection.
+      // start at 0. Predicates will protect buffers between 0 and ID->start(),
+      // however if we started at ID->start and extent == ID->start, we could
+      // have a "degenerate" loop (loop with no iterations). It may not be an
+      // issue to have a 0-sized loop, but all potential consequences haven't
+      // been covered. One example is WAR analysis which could incorrectly think
+      // a barrier inside a 0-sized loop actually provides protection.
       code_ << " = 0; ";
     }
     code_ << gen_index << " < " << gen_stop << "; " << step_code.str() << ") ";

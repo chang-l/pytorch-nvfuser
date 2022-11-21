@@ -131,6 +131,51 @@ TEST_F(NVFuserTest, FusionSelectOpPersistent_CUDA) {
       &fusion, cg_outputs, {t0, idx}, {t7, t8, t9}, __LINE__, __FILE__);
 }
 
+TEST_F(NVFuserTest, FusionIndexSelectSimple_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+  // dimensionality of the problem
+  int nDims = 2;
+  int nElem = 1023;
+  int nElem_select = nElem + 115;
+  int nFeat = 128;
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeContigTensor(nDims);
+  TensorView* tv_idx = makeContigTensor(1, DataType::Int);
+
+  // Register your inputs
+  fusion.addInput(tv0);
+  fusion.addInput(tv_idx);
+
+  TensorView* tv_sel = index_select(tv0, 0, tv_idx);
+  // Register your outputs
+  fusion.addOutput(tv_sel);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input0 = at::randn({nElem, nFeat}, options); // lookup
+  std::vector<int64_t> storage(nElem_select);
+  for (int i = 0; i < nElem_select; ++i) {
+    storage[i] = std::rand() % nElem;
+  }
+  auto opts = torch::TensorOptions().dtype(torch::kLong);
+  auto input_idx_cpu =
+      torch::from_blob(storage.data(), {int64_t(storage.size())}, opts).clone();
+  auto input_idx = input_idx_cpu.to(torch::kCUDA);
+  at::Tensor output =
+      at::randn({nElem_select, nFeat}, options); // output&elemwise
+
+  std::vector<IValue> aten_inputs = {input0, input_idx};
+  auto lparams = schedulePointwise(&fusion, aten_inputs);
+  FusionExecutor fe;
+  fe.compileFusion(&fusion, aten_inputs, lparams);
+  fe.runFusion(aten_inputs, {output}, lparams);
+
+  auto output_ref = at::index_select(input0, 0, input_idx);
+
+  TORCH_CHECK(output_ref.allclose(output));
+}
+
 TEST_F(NVFuserTest, FusionIndexSelect_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);

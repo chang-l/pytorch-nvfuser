@@ -758,6 +758,7 @@ TEST_F(NVFuserTest, FusionRegister_CUDA) {
 
 // dummy expr with 2 outputs only for toposort test.
 struct DummyExpr : public Expr {
+  using Expr::Expr;
   ~DummyExpr() = default;
   DummyExpr(
       IrBuilderPasskey passkey,
@@ -765,21 +766,23 @@ struct DummyExpr : public Expr {
       Val* _outrhs,
       Val* _lhs,
       Val* _rhs)
-      : Expr(passkey, ExprType::UnaryOp) // Not terribly safe...
-  {
+      : Expr(passkey) {
     addOutput(_outlhs);
     addOutput(_outrhs);
     addInput(_lhs);
     addInput(_rhs);
   }
+  NVFUSER_DECLARE_CLONE_AND_CREATE
   DummyExpr(const DummyExpr& other) = delete;
   DummyExpr& operator=(const DummyExpr& other) = delete;
   DummyExpr(DummyExpr&& other) = delete;
   DummyExpr& operator=(DummyExpr&& other) = delete;
-  Expr* shallowCopy() const override {
-    return nullptr;
+  virtual const char* getOpString() const override {
+    return "DummyExpr";
   }
 };
+
+NVFUSER_DEFINE_CLONE_AND_CREATE(DummyExpr)
 
 TEST_F(NVFuserTest, FusionTopoSort_CUDA) {
   Fusion fusion;
@@ -955,7 +958,7 @@ TEST_F(NVFuserTest, FusionTVSplit_CUDA) {
   Expr* outer = tv->axis(2)->extent()->definition();
 
   TORCH_CHECK(
-      outer->getExprType().value() == ExprType::BinaryOp &&
+      outer->isA<BinaryOp>() &&
       static_cast<BinaryOp*>(outer)->getBinaryOpType() ==
           BinaryOpType::CeilDiv &&
       static_cast<BinaryOp*>(outer)->lhs()->sameAs(
@@ -980,7 +983,7 @@ TEST_F(NVFuserTest, FusionTVMerge_CUDA) {
   Expr* axisOp = tv->axis(1)->extent()->definition();
 
   TORCH_CHECK(
-      tv->nDims() == 2 && axisOp->getExprType() == ExprType::BinaryOp &&
+      tv->nDims() == 2 && axisOp->isA<BinaryOp>() &&
       static_cast<BinaryOp*>(axisOp)->getBinaryOpType() == BinaryOpType::Mul &&
       static_cast<BinaryOp*>(axisOp)->lhs() ==
           tv->getRootDomain()[1]->extent() &&

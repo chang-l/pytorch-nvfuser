@@ -456,6 +456,9 @@ PersistentBufferInfo persistentBuffers(Fusion* fusion) {
       if (dynamic_cast<SelectOp*>(consumer->definition())) {
         continue;
       }
+      if (dynamic_cast<IndexSelectOp*>(consumer->definition())) {
+        continue;
+      }
       bool consumer_mappable = true;
       auto mappable_roots =
           root_map.getMappableDims(producer->domain(), consumer->domain());
@@ -945,7 +948,7 @@ std::vector<TensorView*> getViewTVs(Fusion* fusion) {
   for (auto producer_tv : ir_utils::filterByType<TensorView>(fusion_vals)) {
     auto consumer_tvs = ir_utils::consumerTvsOf(producer_tv);
     for (auto consumer_tv : consumer_tvs) {
-      if (consumer_tv->isDefinitionType(ExprType::ViewOp)) {
+      if (consumer_tv->isDefinitionType<ViewOp>()) {
         view_tvs.push_back(consumer_tv);
       }
     }
@@ -976,13 +979,9 @@ std::vector<TensorView*> cacheInputs(Fusion* fusion, bool unroll) {
   auto in_tvs = ir_utils::filterByType<TensorView>(fusion->inputs());
   for (auto tv : in_tvs) {
     if (tv->uses().empty() || tv->isFusionOutput() ||
-        ir_utils::isSelectInput(tv)) {
+        ir_utils::isSelectInput(tv) || ir_utils::isIndexSelectLookupTv(tv)) {
       // Right now, tensors that are input to the select op can't be cached as
       // they must be in global memory.
-      continue;
-    }
-    // skip lookup tv to avoid prefetch
-    if (tv->isLookupTV()) {
       continue;
     }
     auto cached_tv = tv->cacheAfter();
@@ -1327,8 +1326,8 @@ std::vector<TensorView*> getInputsOutputsWithInnerDim(
   for (auto input_tv :
        ir_utils::filterByType<TensorView>(reference_tv->fusion()->inputs())) {
     // for index_select(lookup_tv, dim, index_tv) op
-    // ignore it's lookup_tv as vectorizable_tensor.
-    if (input_tv->isLookupTV()) {
+    // ignore it's lookup_tv.
+    if (ir_utils::isIndexSelectLookupTv(input_tv)) {
       continue;
     }
     if (hasInnerDim(input_tv, vectorizable_dims, vectorize_pass)) {

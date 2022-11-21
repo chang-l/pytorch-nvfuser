@@ -108,10 +108,6 @@ std::unordered_map<Val*, Val*> getSimplificationMap(Fusion* fusion) {
   for (auto input_tv : ir_utils::filterByType<TensorView>(fusion->inputs())) {
     for (auto id :
          TensorDomain::noReductions(input_tv->getMaybeRFactorDomain())) {
-      // lookup cannot become representative ID
-      if (id->isLookupIterType()) {
-        continue;
-      }
       auto id_set_it = id_to_disjoint_root_set.find(id);
       if (id_set_it == id_to_disjoint_root_set.end()) {
         continue;
@@ -200,14 +196,8 @@ void replaceSymbolicSizes(Fusion* fusion) {
           !orig_size->isFusionInput() && !orig_size->isConstScalar()) {
         std::stringstream ss;
         ss << "T" << tv->name() << ".size[" << dim++ << "]";
-        auto name_scalar = IrBuilder::create<NamedScalar>(
+        tensor_dim_map[orig_size] = IrBuilder::create<NamedScalar>(
             ss.str(), orig_size->getDataType().value());
-        tensor_dim_map[orig_size] = name_scalar;
-        // The index calculation of index_select op requires its original size.
-        if (id->isLookupIterType()) {
-          tv->domain()->setLookupExtent(name_scalar);
-        }
-
       } else {
         dim++;
       }
@@ -227,6 +217,7 @@ void replaceSymbolicSizes(Fusion* fusion) {
       }
     }
   }
+
   // Run mutation on the fusion with the tensor_dim_map
   ir_utils::replaceValue(fusion, tensor_dim_map);
 }
