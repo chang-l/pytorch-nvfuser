@@ -252,6 +252,10 @@ void Expr::dispatch(T handler, Expr* expr) {
     ptr(handler)->handle(expr->as<kir::GroupedGridWelford>());
     return;
   }
+  if (expr->isStrictlyA<kir::VectorizedWelfordOp>()) {
+    ptr(handler)->handle(expr->as<kir::VectorizedWelfordOp>());
+    return;
+  }
   if (expr->isStrictlyA<kir::AllocateFusedReduction>()) {
     ptr(handler)->handle(expr->as<kir::AllocateFusedReduction>());
     return;
@@ -483,6 +487,10 @@ void Expr::constDispatch(T handler, const Expr* expr) {
   }
   if (expr->isStrictlyA<kir::GroupedGridWelford>()) {
     ptr(handler)->handle(expr->as<kir::GroupedGridWelford>());
+    return;
+  }
+  if (expr->isStrictlyA<kir::VectorizedWelfordOp>()) {
+    ptr(handler)->handle(expr->as<kir::VectorizedWelfordOp>());
     return;
   }
   if (expr->isStrictlyA<kir::AllocateFusedReduction>()) {
@@ -822,6 +830,9 @@ void OptOutConstDispatch::handle(const kir::GridWelford* stmt) {
 void OptOutConstDispatch::handle(const kir::GroupedGridWelford* stmt) {
   unhandled(stmt);
 }
+void OptOutConstDispatch::handle(const kir::VectorizedWelfordOp* stmt) {
+  unhandled(stmt);
+}
 void OptOutConstDispatch::handle(const kir::AllocateFusedReduction* stmt) {
   unhandled(stmt);
 }
@@ -982,6 +993,9 @@ void OptOutDispatch::handle(kir::GridWelford* stmt) {
   unhandled(stmt);
 }
 void OptOutDispatch::handle(kir::GroupedGridWelford* stmt) {
+  unhandled(stmt);
+}
+void OptOutDispatch::handle(kir::VectorizedWelfordOp* stmt) {
   unhandled(stmt);
 }
 void OptOutDispatch::handle(kir::AllocateFusedReduction* stmt) {

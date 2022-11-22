@@ -115,6 +115,7 @@ class GroupedGridReduction;
 class GridBroadcast;
 class GridWelford;
 class GroupedGridWelford;
+class VectorizedWelfordOp;
 class AllocateFusedReduction;
 class InitMagicZero;
 class UpdateMagicZero;
@@ -189,6 +190,7 @@ class TORCH_CUDA_CU_API OptOutConstDispatch : public PolymorphicBase {
   virtual void handle(const kir::GridBroadcast*);
   virtual void handle(const kir::GridWelford*);
   virtual void handle(const kir::GroupedGridWelford*);
+  virtual void handle(const kir::VectorizedWelfordOp*);
   virtual void handle(const kir::AllocateFusedReduction*);
 };
 
@@ -258,6 +260,7 @@ class TORCH_CUDA_CU_API OptOutDispatch : public PolymorphicBase {
   virtual void handle(kir::GridBroadcast* stmt);
   virtual void handle(kir::GridWelford* stmt);
   virtual void handle(kir::GroupedGridWelford* stmt);
+  virtual void handle(kir::VectorizedWelfordOp* stmt);
   virtual void handle(kir::AllocateFusedReduction* stmt);
 };
 
@@ -302,13 +305,13 @@ class TORCH_CUDA_CU_API OptOutMutator : public PolymorphicBase {
   void registerMutation(Val* val, Val* mutation);
 
   Val* maybeMutated(Val* val) {
-    if (mutations.find(val) == mutations.end()) {
+    if (mutations_.find(val) == mutations_.end()) {
       return val;
     }
-    return mutations.at(val);
+    return mutations_.at(val);
   }
 
-  std::unordered_map<Val*, Val*> mutations;
+  std::unordered_map<Val*, Val*> mutations_;
 
   //****Functions below defined in mutator.cpp*****
 
@@ -326,7 +329,8 @@ class TORCH_CUDA_CU_API OptOutMutator : public PolymorphicBase {
   virtual void mutate(kir::TensorIndex*);
 
  protected:
-  void removeExpr(IrContainer*, Expr*);
+  virtual void removeExpr(IrContainer*, Expr*) const;
+  virtual void registerNewExpr(Expr*) {}
 };
 
 } // namespace cuda
