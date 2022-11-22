@@ -21,10 +21,10 @@ static void setupFusion(Fusion* fusion) {
 
   // set up input tensor views
   auto t0 = makeContigTensor(2); // nDim = 2
-  fusion->addInput(t0);
   // scaling tensor
   auto t1 = makeContigTensor(2);
   fusion->addInput(t1);
+  fusion->addInput(t0);
   auto t_idx = makeContigTensor(1, DataType::Int);
   fusion->addInput(t_idx);
 
@@ -151,62 +151,286 @@ static void IndexSelect_RunFusion(benchmark::State& benchmark_state) {
 
 BENCHMARK(IndexSelect_RunFusion)->Unit(benchmark::kMicrosecond);
 
-//------------------------------------------------------------------------------
+static void setupIndexSelectSimple(Fusion* fusion, DataType dtype, int select_dim) {
+  FusionGuard fg(fusion);
+  bool is_fp16 = dtype == DataType::Half;
 
-// static void IndexSelect_RunFusion_GpuOnly(benchmark::State& benchmark_state) {
-//   Fusion fusion;
+  // set up input tensor views
+  auto t0 = makeContigTensor(2, dtype); // nDim = 2
+  // scaling tensor
+  auto t1 = makeContigTensor(2, dtype);
+  fusion->addInput(t0);
+  if (is_fp16) {
+    t0 = castOp(DataType::Float, t0);
+    t1 = castOp(DataType::Float, t1);
+  }
 
-//   // setup fusion
-//   setupFusion(&fusion);
+  auto t_idx = makeContigTensor(1, DataType::Int);
+  fusion->addInput(t_idx);
 
-//   // inputs
-//   std::vector<c10::IValue> inputs = setupInputs();
+  auto t2 = index_select(t0, select_dim, t_idx); // select at dim=0
+  if (is_fp16) {
+    t2 = castOp(DataType::Half, t2);
+  }
+  fusion->addOutput(t2);
+}
 
-//   // outputs
-//   std::vector<at::Tensor> outputs;
+static void setupIndexSelectFused(Fusion* fusion, DataType dtype, int select_dim) {
+  FusionGuard fg(fusion);
+  bool is_fp16 = dtype == DataType::Half;
 
-//   auto lparams = schedulePointwise(&fusion, c10::ArrayRef<c10::IValue>(inputs));
+  // set up input tensor views
+  auto t0 = makeContigTensor(2, dtype); // nDim = 2
+  // scaling tensor
+  auto t1 = makeContigTensor(2, dtype);
+  fusion->addInput(t1);
+  fusion->addInput(t0);
+  if (is_fp16) {
+    t0 = castOp(DataType::Float, t0);
+    t1 = castOp(DataType::Float, t1);
+  }
 
-//   FusionExecutor executor;
-//   executor.setMeasureKernelTimeFlag(true);
-//   executor.compileFusion(&fusion);
+  auto t_idx = makeContigTensor(1, DataType::Int);
+  fusion->addInput(t_idx);
 
-//   C10_CUDA_CHECK(cudaDeviceSynchronize());
+  auto t2 = index_select(t0, select_dim, t_idx); // select at dim=0
+  auto t3 = mul(t1, t2);
+  auto t4 = add(t3, IrBuilder::create<Double>(17.0));
 
-//   for (auto _ : benchmark_state) {
-//     outputs = executor.runFusion(c10::ArrayRef<c10::IValue>(inputs), lparams);
-//     benchmark_state.SetIterationTime(executor.kernelTimeMs() / 1000.0);
-//     clearL2Cache();
-//   }
-// }
+  if (is_fp16) {
+    t4 = castOp(DataType::Half, t4);
+  }
 
-// BENCHMARK(IndexSelect_RunFusion_GpuOnly)
-//     ->Unit(benchmark::kMicrosecond)
-//     ->UseManualTime();
+  // Save float output for validation
+  fusion->addOutput(t4);
+}
 
-// //------------------------------------------------------------------------------
+static void NvFuserScheduler_IndexSelectSimple(
+    benchmark::State& benchmark_state,
+    FusionExecutorCache* fusion_executor_cache,
+    DataType dtype,
+    int select_dim) {
+  auto elem_size = benchmark_state.range(0);
+  auto select_size = benchmark_state.range(1);
+  int nFeat = 128;  // lets fix feat dim for now
 
-// static void IndexSelect_RunFusion_CpuOnly(benchmark::State& benchmark_state) {
-//   Fusion fusion;
+  at::manual_seed(0);
+  auto options =
+      at::TensorOptions().dtype(data_type_to_aten(dtype)).device(at::kCUDA, 0);
 
-//   // setup fusion
-//   setupFusion(&fusion);
+  at::Tensor t0 =
+    (select_dim ? at::randn({nFeat, elem_size}, options)
+                : at::randn({elem_size, nFeat}, options));
+  auto indx_options = at::TensorOptions().dtype(at::kLong).device(at::kCUDA, 0);
+  at::Tensor t1 = at::randint(elem_size, {select_size}, indx_options);
+  at::Tensor t2 =
+    (select_dim ? at::randn({nFeat, select_size}, options)
+                : at::randn({select_size, nFeat}, options));
+  fusion_executor_cache->profile(true);
+  fusion_executor_cache->runFusionWithInputs({t0, t1});
 
-//   // inputs
-//   std::vector<c10::IValue> inputs = setupInputs();
+  auto compile_log = fusion_executor_cache->getMostRecentExecutorInfo();
+  auto executor_instance = compile_log.fusion_executor;
+  auto params = toString(compile_log.params);
+  auto lparams = toString(compile_log.fusion_executor->lastLaunchParams());
 
-//   // outputs
-//   std::vector<at::Tensor> outputs;
+  benchmark_state.SetLabel(params + lparams);
 
-//   auto lparams = schedulePointwise(&fusion, c10::ArrayRef<c10::IValue>(inputs));
+  fusion_executor_cache->profile(false);
+  executor_instance->setMeasureKernelTimeFlag(true);
+  // Sync everything up before we start
+  clearL2Cache();
+  C10_CUDA_CHECK(cudaDeviceSynchronize());
+  for (auto _ : benchmark_state) {
+    auto cg_outputs = fusion_executor_cache->runFusionWithInputs({t0, t1});
+    benchmark_state.SetIterationTime(
+      executor_instance->kernelTimeMs() / 1000.0);
+    C10_CUDA_CHECK(cudaDeviceSynchronize());
+    clearL2Cache();
+    C10_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+  // Sync everything up before we're finished, don't want to run ahead on the
+  // cpu while benchmarking.
+  C10_CUDA_CHECK(cudaDeviceSynchronize());
 
-//   FusionExecutor executor;
-//   executor.setExecuteKernelFlag(false);
-//   executor.compileFusion(&fusion);
+  benchmark_state.SetBytesProcessed(
+    int64_t(benchmark_state.iterations()) *
+    (select_size + nFeat * select_size/*index select op*/)
+    * int64_t(dataTypeSize(dtype)));
+}
 
-//   for (auto _ : benchmark_state) {
-//     outputs = executor.runFusion(c10::ArrayRef<c10::IValue>(inputs), lparams);
-//   }
-// }
+static void NvFuserScheduler_IndexSelectFused(
+    benchmark::State& benchmark_state,
+    FusionExecutorCache* fusion_executor_cache,
+    DataType dtype,
+    int select_dim) {
+  auto elem_size = benchmark_state.range(0);
+  auto select_size = benchmark_state.range(1);
+  int nFeat = 128;  // lets fix feat dim for now
 
-// BENCHMARK(IndexSelect_RunFusion_CpuOnly)->Unit(benchmark::kMicrosecond);
+  at::manual_seed(0);
+  auto options =
+      at::TensorOptions().dtype(data_type_to_aten(dtype)).device(at::kCUDA, 0);
+
+  at::Tensor t0 =
+    (select_dim ? at::randn({nFeat, elem_size}, options)
+                : at::randn({elem_size, nFeat}, options));
+  auto indx_options = at::TensorOptions().dtype(at::kLong).device(at::kCUDA, 0);
+  at::Tensor t1 = at::randint(elem_size, {select_size}, indx_options);
+  at::Tensor t2 =
+    (select_dim ? at::randn({nFeat, select_size}, options)
+                : at::randn({select_size, nFeat}, options));
+  fusion_executor_cache->profile(true);
+  fusion_executor_cache->runFusionWithInputs({t2, t0, t1});
+
+  auto compile_log = fusion_executor_cache->getMostRecentExecutorInfo();
+  auto executor_instance = compile_log.fusion_executor;
+  auto params = toString(compile_log.params);
+  auto lparams = toString(compile_log.fusion_executor->lastLaunchParams());
+
+  benchmark_state.SetLabel(params + lparams);
+
+  fusion_executor_cache->profile(false);
+  executor_instance->setMeasureKernelTimeFlag(true);
+  // Sync everything up before we start
+  C10_CUDA_CHECK(cudaDeviceSynchronize());
+  for (auto _ : benchmark_state) {
+    clearL2Cache();
+    auto cg_outputs = fusion_executor_cache->runFusionWithInputs({t2, t0, t1});
+    benchmark_state.SetIterationTime(
+        executor_instance->kernelTimeMs() / 1000.0);
+  }
+  // Sync everything up before we're finished, don't want to run ahead on the
+  // cpu while benchmarking.
+  C10_CUDA_CHECK(cudaDeviceSynchronize());
+
+  benchmark_state.SetBytesProcessed(
+    int64_t(benchmark_state.iterations()) *
+    (nFeat * select_size * 2 /*2 elemwise ops*/ + select_size + nFeat * select_size/*index select op*/)
+    * int64_t(dataTypeSize(dtype)));
+}
+
+
+NVFUSER_BENCHMARK_DEFINE(
+    NvFuserScheduler_IndexSelectSimple_Outer_fp32,
+    setupIndexSelectSimple,
+    NvFuserScheduler_IndexSelectSimple,
+    DataType::Float,
+    0);
+
+NVFUSER_BENCHMARK_RUN(NvFuserScheduler_IndexSelectSimple_Outer_fp32)
+    ->Ranges({{128, 128}, {512, 512}})
+    ->Unit(benchmark::kMicrosecond)
+->UseManualTime();
+
+NVFUSER_BENCHMARK_DEFINE(
+    NvFuserScheduler_IndexSelectFused_Outer_fp32,
+    setupIndexSelectFused,
+    NvFuserScheduler_IndexSelectFused,
+    DataType::Float,
+    0);
+
+NVFUSER_BENCHMARK_RUN(NvFuserScheduler_IndexSelectFused_Outer_fp32)
+    // ->RangeMultiplier(2)
+    ->Ranges({{128, 32768}, {16, 32768}})
+    ->Unit(benchmark::kMicrosecond)
+->UseManualTime();
+
+
+// -------------------------------------- Baseline model ------------------------------------------------------------
+static void Baseline_IndexSelectSimple(
+    benchmark::State& benchmark_state,
+    DataType dtype,
+    int select_dim) {
+  auto elem_size = benchmark_state.range(0);
+  auto select_size = benchmark_state.range(1);
+  int nFeat = 128;  // lets fix feat dim for now
+
+  at::manual_seed(0);
+  auto options =
+      at::TensorOptions().dtype(data_type_to_aten(dtype)).device(at::kCUDA, 0);
+
+  at::Tensor t0 =
+      (select_dim ? at::randn({nFeat, elem_size}, options)
+                  : at::randn({elem_size, nFeat}, options));
+  auto indx_options = at::TensorOptions().dtype(at::kLong).device(at::kCUDA, 0);
+  at::Tensor t1 = at::randint(elem_size, {select_size}, indx_options);
+
+  // Sync everything up before we start
+  clearL2Cache();
+  C10_CUDA_CHECK(cudaDeviceSynchronize());
+  for (auto _ : benchmark_state) {
+    CudaKernelTimer timer;
+    auto output = at::index_select(t0, select_dim, t1);
+    benchmark_state.SetIterationTime(timer.elapsed() / 1000.0);
+    C10_CUDA_CHECK(cudaDeviceSynchronize());
+    clearL2Cache();
+    C10_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+
+  benchmark_state.SetBytesProcessed(
+      int64_t(benchmark_state.iterations()) *
+      (select_size + nFeat * select_size/*index select op*/)
+      * int64_t(dataTypeSize(dtype)));
+}
+
+static void Baseline_IndexSelectFused(
+    benchmark::State& benchmark_state,
+    DataType dtype,
+    int select_dim) {
+  auto elem_size = benchmark_state.range(0);
+  auto select_size = benchmark_state.range(1);
+  int nFeat = 128;  // lets fix feat dim for now
+
+  at::manual_seed(0);
+  auto options =
+      at::TensorOptions().dtype(data_type_to_aten(dtype)).device(at::kCUDA, 0);
+
+  at::Tensor t0 =
+      (select_dim ? at::randn({nFeat, elem_size}, options)
+                  : at::randn({elem_size, nFeat}, options));
+  auto indx_options = at::TensorOptions().dtype(at::kLong).device(at::kCUDA, 0);
+  at::Tensor t1 = at::randint(elem_size, {select_size}, indx_options);
+
+  at::Tensor t2 =
+    (select_dim ? at::randn({nFeat, select_size}, options)
+                : at::randn({select_size, nFeat}, options));
+
+  // Sync everything up before we start
+  clearL2Cache();
+  C10_CUDA_CHECK(cudaDeviceSynchronize());
+  for (auto _ : benchmark_state) {
+    CudaKernelTimer timer;
+    auto output = at::index_select(t0, select_dim, t1) * t2 + 17.0;
+    benchmark_state.SetIterationTime(timer.elapsed() / 1000.0);
+    C10_CUDA_CHECK(cudaDeviceSynchronize());
+    clearL2Cache();
+    C10_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+
+  benchmark_state.SetBytesProcessed(
+      int64_t(benchmark_state.iterations()) *
+      (nFeat * select_size * 2 /*2 elemwise ops*/ + select_size + nFeat * select_size/*index select op*/)
+      * int64_t(dataTypeSize(dtype)));
+}
+
+
+static void Baseline_IndexSelectSimple_Outer_fp32(benchmark::State& benchmark_state) {
+  Baseline_IndexSelectSimple(benchmark_state, DataType::Float, 0);
+}
+
+static void Baseline_IndexSelectFused_Outer_fp32(benchmark::State& benchmark_state) {
+  Baseline_IndexSelectFused(benchmark_state, DataType::Float, 0);
+}
+
+BENCHMARK(Baseline_IndexSelectSimple_Outer_fp32)
+    // ->RangeMultiplier(2)
+    ->Ranges({{128,128}, {512, 512}})
+    ->Unit(benchmark::kMicrosecond)
+    ->UseManualTime();
+
+BENCHMARK(Baseline_IndexSelectFused_Outer_fp32)
+    // ->RangeMultiplier(2)
+     ->Ranges({{128, 32768}, {16, 32768}})
+    ->Unit(benchmark::kMicrosecond)
+    ->UseManualTime();
