@@ -730,10 +730,9 @@ std::unordered_map<IterDomain*, std::pair<int64_t, int64_t>> getLiveRangeOffsets
           // terminating, the range to compute must not be affected by
           // how it's used by its consumers because an output tensor
           // is visible to outside of the fusion.
-          map.insert(
-              {consumer_root,
-               {consumer_root->start()->evaluateInt(),
-                consumer_root->stopOffset()->evaluateInt()}});
+          map.insert({consumer_root,
+                      {consumer_root->start()->evaluateInt(),
+                       consumer_root->stopOffset()->evaluateInt()}});
         } else {
           // When the range of this root domain is already set, it
           // must be set by its consumers. Make sure the required
@@ -884,10 +883,9 @@ void validateMinimumArch(int major, int minor) {
 //!  specialization of tidx as lane id.
 void validateMmaTensors(MmaOp* mma) {
   bool tidx_validated = false;
-  std::vector<TensorView*> to_validate = {
-      mma->inA()->as<TensorView>(),
-      mma->inB()->as<TensorView>(),
-      mma->out()->as<TensorView>()};
+  std::vector<TensorView*> to_validate = {mma->inA()->as<TensorView>(),
+                                          mma->inB()->as<TensorView>(),
+                                          mma->out()->as<TensorView>()};
 
   for (auto tv : to_validate) {
     for (auto id : tv->domain()->domain()) {
@@ -1308,6 +1306,17 @@ void validateGroupedReductions(Fusion* fusion) {
           ". Up to ",
           kMaxNumGroupedReductions,
           " reductions are allowed.");
+    }
+  }
+}
+
+void validateLookupTV(Fusion* fusion) {
+  for (auto expr : fusion->exprs()) {
+    if (expr->isA<SelectOp>() || expr->isA<IndexSelectOp>()) {
+      TORCH_CHECK(
+          expr->input(0)->isFusionInput(),
+          "Lookup input must be a fusion input: ",
+          expr->toString());
     }
   }
 }

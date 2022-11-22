@@ -224,7 +224,6 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
     const RootDomainMap& root_map,
     bool replay_swizzle) {
   FUSER_PERF_SCOPE("TransformReplay::replayPasC");
-  bool is_producer_lookup_tv = ir_utils::isIndexSelectLookupTv(producer);
   // If this is a reduction operation, we may call transform_replay on the
   // tensor view. When this happens, just return thet target view.
   if (producer == consumer) {
@@ -285,9 +284,14 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   for (auto c_id : consumer_CA_ids) {
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
+      // check if c_id depends on selected domain
+      auto selected_domain =
+          ir_utils::getSelectedDomainIfTvIsIndexSelectOutput(consumer);
       TORCH_INTERNAL_ASSERT(
           c_id->isBroadcast() || c_id->isGather() ||
-              c_id->isVectorComponent() || is_producer_lookup_tv,
+              c_id->isVectorComponent() ||
+              (selected_domain &&
+               DependencyCheck::isDependencyOf(selected_domain, c_id)),
           "Could not find axis, ",
           c_id,
           ", requested in replay.");
@@ -385,9 +389,14 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   for (auto c_id : consumer_CA_ids) {
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
+      // check if c_id depends on selected domain
+      auto selected_domain =
+          ir_utils::getSelectedDomainIfTvIsIndexSelectOutput(consumer);
       TORCH_INTERNAL_ASSERT(
           c_id->isBroadcast() || c_id->isGather() ||
-              c_id->isVectorComponent() || is_producer_lookup_tv,
+              c_id->isVectorComponent() ||
+              (selected_domain &&
+               DependencyCheck::isDependencyOf(selected_domain, c_id)),
           "Could not find axis, ",
           c_id,
           ", requested in replay.");

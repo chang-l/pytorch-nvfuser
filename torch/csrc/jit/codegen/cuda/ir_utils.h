@@ -355,6 +355,10 @@ TORCH_CUDA_CU_API bool isIndexSelectLookupTv(const TensorView* tv);
 // Check if the given tv is third argment of index_select(lookup, dim, indices)
 TORCH_CUDA_CU_API bool isIndexSelectIndicesTv(const TensorView* tv);
 
+// Get selected domain if tv is index select's output or return nullptr
+TORCH_CUDA_CU_API IterDomain* getSelectedDomainIfTvIsIndexSelectOutput(
+    const TensorView* tv);
+
 } // namespace ir_utils
 } // namespace cuda
 } // namespace fuser

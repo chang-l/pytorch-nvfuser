@@ -1139,6 +1139,24 @@ bool isIndexSelectIndicesTv(const TensorView* tv) {
   return false;
 }
 
+IterDomain* getSelectedDomainIfTvIsIndexSelectOutput(const TensorView* tv) {
+  auto tv_def = tv->definition();
+  if (tv_def != nullptr) {
+    if (tv_def->isA<IndexSelectOp>()) {
+      auto idx_sel = tv_def->as<IndexSelectOp>();
+      auto dim = idx_sel->dim();
+      TORCH_INTERNAL_ASSERT(
+          dim < tv->domain()->getRootDomain().size(),
+          "Expect dim of index select is smaller than its output root domain size. But got dim = ",
+          dim,
+          " size = ",
+          tv->domain()->getRootDomain().size());
+      return tv->domain()->getRootDomain()[dim];
+    }
+  }
+  return nullptr;
+}
+
 } // namespace ir_utils
 } // namespace cuda
 } // namespace fuser

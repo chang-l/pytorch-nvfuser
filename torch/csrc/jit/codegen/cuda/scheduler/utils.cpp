@@ -453,10 +453,8 @@ PersistentBufferInfo persistentBuffers(Fusion* fusion) {
     std::vector<TensorView*> unmappable_consumers;
 
     for (auto consumer : consumers) {
-      if (dynamic_cast<SelectOp*>(consumer->definition())) {
-        continue;
-      }
-      if (dynamic_cast<IndexSelectOp*>(consumer->definition())) {
+      if (dynamic_cast<SelectOp*>(consumer->definition()) ||
+          dynamic_cast<IndexSelectOp*>(consumer->definition())) {
         continue;
       }
       bool consumer_mappable = true;

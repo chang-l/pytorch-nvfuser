@@ -1220,6 +1220,8 @@ class ReductionScheduler : public SchedulerEntry {
     }
 
     // Check that inputs of all select ops are fusion inputs
+    // TODO(feiwen): To add some routines to handle both SelectOp and
+    // IndexSelectOp
     for (auto select : ir_utils::getSelectOps(fusion)) {
       if (!select->input(0)->isFusionInput()) {
         scheduler_debug_utils::canScheduleRejectReason(
@@ -1234,7 +1236,6 @@ class ReductionScheduler : public SchedulerEntry {
         return false;
       }
     }
-
     for (auto idx_sel : ir_utils::getIndexSelectOps(fusion)) {
       if (!idx_sel->input(0)->isFusionInput()) {
         scheduler_debug_utils::canScheduleRejectReason(
