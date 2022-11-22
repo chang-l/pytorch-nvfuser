@@ -319,7 +319,7 @@ NVFUSER_BENCHMARK_DEFINE(
     0);
 
 NVFUSER_BENCHMARK_RUN(NvFuserScheduler_IndexSelectSimple_Outer_fp32)
-    ->Ranges({{128, 128}, {512, 512}})
+    ->Ranges({{32768, 32768}, {65536,65536}})
     ->Unit(benchmark::kMicrosecond)
 ->UseManualTime();
 
@@ -425,7 +425,7 @@ static void Baseline_IndexSelectFused_Outer_fp32(benchmark::State& benchmark_sta
 
 BENCHMARK(Baseline_IndexSelectSimple_Outer_fp32)
     // ->RangeMultiplier(2)
-    ->Ranges({{128,128}, {512, 512}})
+    ->Ranges({{32768, 32768}, {65536,65536}})
     ->Unit(benchmark::kMicrosecond)
     ->UseManualTime();
 
