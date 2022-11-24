@@ -43,7 +43,7 @@ if RUN_NVFUSER and torch.version.cuda is not None:
 
 if 'PYTORCH_NVFUSER_ENABLE' not in os.environ:
     os.environ['PYTORCH_NVFUSER_ENABLE'] = ""
-os.environ['PYTORCH_NVFUSER_ENABLE'] = 'linear_decomposition,conv_decomposition,' + os.environ['PYTORCH_NVFUSER_ENABLE']
+os.environ['PYTORCH_NVFUSER_ENABLE'] = 'linear_decomposition,conv_decomposition,graph_op_fusion,' + os.environ['PYTORCH_NVFUSER_ENABLE']
 if 'PYTORCH_NVFUSER_DISABLE' not in os.environ:
     os.environ['PYTORCH_NVFUSER_DISABLE'] = ""
 os.environ['PYTORCH_NVFUSER_DISABLE'] = 'fallback,fma,' + os.environ['PYTORCH_NVFUSER_DISABLE']
@@ -3827,7 +3827,6 @@ class TestCudaFuser(JitTestCase):
                 total += 1
                 test_fn(all_views[idx], all_views[jdx], torch.float, 'cuda', 1e-6)
 
-    @unittest.skipIf(ALIAS_TEST_DISABLED, "skipping this test since view is disabled now")
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,
                      "Requires fusion optimization pass to be effective")
@@ -4181,20 +4180,15 @@ class TestCudaFuser(JitTestCase):
         num_elements = 355984
         dim = torch.tensor(0, device='cuda').to(dtype=torch.int)
         lookup_tv = torch.rand(lookup_size, feat_dim, dtype=torch.float, device="cuda")
-        indies_tv = torch.randint(0, lookup_size, (num_elements,), dtype=torch.float, device="cuda").to(dtype=torch.int)
+        indies_tv = torch.randint(0, lookup_size, (num_elements,), dtype=torch.float, device="cuda").to(dtype=torch.long)
         sbf = torch.rand(num_elements, feat_dim, dtype=torch.float, device="cuda")
 
-        def failure(x_kj, idx_kj, sbf):
+        def t(x_kj: torch.Tensor, idx_kj: torch.Tensor, sbf: torch.Tensor, dim : int):
             sbf_res = torch.index_select(x_kj, dim, idx_kj) * sbf
             sbf_res = sbf_res + 17
             return sbf_res
-
-        with self.assertRaises(Exception) as error_out:
-            t_jit = torch.jit.script(failure)
-            t_jit(lookup_tv, indies_tv, sbf)
-        fc = FileCheck().check("python value of type 'Tensor' cannot be used as a value")
-        print(str(error_out.exception))
-        fc.check("torch.index_select").run(str(error_out.exception))
+        t_jit = torch.jit.script(t)
+        self._run_helper(t_jit, t, lookup_tv, indies_tv, sbf, dim)
 
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,

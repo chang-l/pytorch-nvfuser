@@ -1533,16 +1533,10 @@ class IrParser {
                   dim_value.has_value(), "dim in index_select is not valid");
               auto index = list_val.front();
               list_val.pop_front();
-              Val* out = nullptr;
-              TORCH_INTERNAL_ASSERT(false, "index_select is not implemented");
-              // TODO(Feiwen): uncomment following lines once backend PR meraged
-              // index_select is defined in backend PR
-              /*
-              out = index_select(
+              Val* out = index_select(
                   input->as<TensorView>(),
                   dim_value.value(),
                   index->as<TensorView>());
-              */
               value_map.emplace(
                   node->output()->unique(), ValueHolder(out, format));
             },
