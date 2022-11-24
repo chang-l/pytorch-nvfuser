@@ -34,10 +34,7 @@ TensorView* maybe_broadcast_inner_to_rank(TensorView* t, size_t rank) {
   return t;
 }
 
-TensorView* maybe_broadcast_idxtv_inner_outter_to_rank(
-    TensorView* t,
-    size_t dim,
-    size_t rank) {
+TensorView* maybe_broadcast_index_tv(TensorView* t, size_t dim, size_t rank) {
   size_t ori_rank =
       TensorDomain::noReductions(t->getMaybeRFactorDomain()).size();
   TORCH_INTERNAL_ASSERT(
@@ -547,8 +544,7 @@ TensorView* index_select(TensorView* lookup_tv, int dim, TensorView* index_tv) {
   auto out = IrBuilder::create<TensorView>(td, dtype);
 
   // broadcast index to lookup's rank.
-  index_tv = maybe_broadcast_idxtv_inner_outter_to_rank(
-      index_tv->as<TensorView>(), dim, n_dims);
+  index_tv = maybe_broadcast_index_tv(index_tv->as<TensorView>(), dim, n_dims);
   IrBuilder::create<IndexSelectOp>(
       out, lookup_tv, dim, lookup_dom[dim], index_tv);
   return out;
