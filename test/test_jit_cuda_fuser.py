@@ -43,7 +43,8 @@ if RUN_NVFUSER and torch.version.cuda is not None:
 
 if 'PYTORCH_NVFUSER_ENABLE' not in os.environ:
     os.environ['PYTORCH_NVFUSER_ENABLE'] = ""
-os.environ['PYTORCH_NVFUSER_ENABLE'] = 'linear_decomposition,conv_decomposition,graph_op_fusion,' + os.environ['PYTORCH_NVFUSER_ENABLE']
+os.environ['PYTORCH_NVFUSER_ENABLE'] = 'linear_decomposition,conv_decomposition,graph_op_fusion,' + \
+    os.environ['PYTORCH_NVFUSER_ENABLE']
 if 'PYTORCH_NVFUSER_DISABLE' not in os.environ:
     os.environ['PYTORCH_NVFUSER_DISABLE'] = ""
 os.environ['PYTORCH_NVFUSER_DISABLE'] = 'fallback,fma,' + os.environ['PYTORCH_NVFUSER_DISABLE']
@@ -3827,6 +3828,7 @@ class TestCudaFuser(JitTestCase):
                 total += 1
                 test_fn(all_views[idx], all_views[jdx], torch.float, 'cuda', 1e-6)
 
+    @unittest.skipIf(ALIAS_TEST_DISABLED, "skipping this test since view is disabled now")
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,
                      "Requires fusion optimization pass to be effective")
@@ -4151,7 +4153,6 @@ class TestCudaFuser(JitTestCase):
         t_jit = torch.jit.script(t)
         self._run_helper(t_jit, t, x)
 
-    @unittest.skipIf(ALIAS_TEST_DISABLED, "skipping this test since index_select's backend PR hasn't been merged")
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,
                      "Requires fusion optimization pass to be effective")
@@ -4170,7 +4171,6 @@ class TestCudaFuser(JitTestCase):
         t_jit = torch.jit.script(t)
         self._run_helper(t_jit, t, lookup_tv, indies_tv, sbf)
 
-    @unittest.skipIf(ALIAS_TEST_DISABLED, "skipping this test since index_select's backend PR hasn't been merged")
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,
                      "Requires fusion optimization pass to be effective")
