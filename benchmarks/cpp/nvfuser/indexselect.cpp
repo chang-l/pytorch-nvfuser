@@ -175,7 +175,7 @@ static void setupIndexSelectSimple(Fusion* fusion, DataType dtype, int select_di
   fusion->addOutput(t2);
 }
 
-static void setupIndexSelectFused(Fusion* fusion, DataType dtype, int select_dim) {
+static void setupIndexSelect(Fusion* fusion, DataType dtype, int select_dim) {
   FusionGuard fg(fusion);
   bool is_fp16 = dtype == DataType::Half;
 
@@ -259,7 +259,7 @@ static void NvFuserScheduler_IndexSelectSimple(
     * int64_t(dataTypeSize(dtype)));
 }
 
-static void NvFuserScheduler_IndexSelectFused(
+static void NvFuserScheduler_IndexSelect(
     benchmark::State& benchmark_state,
     FusionExecutorCache* fusion_executor_cache,
     DataType dtype,
@@ -324,13 +324,13 @@ NVFUSER_BENCHMARK_RUN(NvFuserScheduler_IndexSelectSimple_Outer_fp32)
 ->UseManualTime();
 
 NVFUSER_BENCHMARK_DEFINE(
-    NvFuserScheduler_IndexSelectFused_Outer_fp32,
-    setupIndexSelectFused,
-    NvFuserScheduler_IndexSelectFused,
+    NvFuserScheduler_IndexSelect_Outer_fp32,
+    setupIndexSelect,
+    NvFuserScheduler_IndexSelect,
     DataType::Float,
     0);
 
-NVFUSER_BENCHMARK_RUN(NvFuserScheduler_IndexSelectFused_Outer_fp32)
+NVFUSER_BENCHMARK_RUN(NvFuserScheduler_IndexSelect_Outer_fp32)
     // ->RangeMultiplier(2)
     ->Ranges({{128, 32768}, {16, 32768}})
     ->Unit(benchmark::kMicrosecond)
@@ -374,7 +374,7 @@ static void Baseline_IndexSelectSimple(
       * int64_t(dataTypeSize(dtype)));
 }
 
-static void Baseline_IndexSelectFused(
+static void Baseline_IndexSelect(
     benchmark::State& benchmark_state,
     DataType dtype,
     int select_dim) {
@@ -419,8 +419,8 @@ static void Baseline_IndexSelectSimple_Outer_fp32(benchmark::State& benchmark_st
   Baseline_IndexSelectSimple(benchmark_state, DataType::Float, 0);
 }
 
-static void Baseline_IndexSelectFused_Outer_fp32(benchmark::State& benchmark_state) {
-  Baseline_IndexSelectFused(benchmark_state, DataType::Float, 0);
+static void Baseline_IndexSelect_Outer_fp32(benchmark::State& benchmark_state) {
+  Baseline_IndexSelect(benchmark_state, DataType::Float, 0);
 }
 
 BENCHMARK(Baseline_IndexSelectSimple_Outer_fp32)
@@ -429,7 +429,7 @@ BENCHMARK(Baseline_IndexSelectSimple_Outer_fp32)
     ->Unit(benchmark::kMicrosecond)
     ->UseManualTime();
 
-BENCHMARK(Baseline_IndexSelectFused_Outer_fp32)
+BENCHMARK(Baseline_IndexSelect_Outer_fp32)
     // ->RangeMultiplier(2)
      ->Ranges({{128, 32768}, {16, 32768}})
     ->Unit(benchmark::kMicrosecond)
