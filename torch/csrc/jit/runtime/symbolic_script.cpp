@@ -222,6 +222,17 @@ const std::vector<std::string> functions = {
             # FIXME: torchscript: torch.zeros(sizes, grad.options())
             return torch.zeros(sizes).to(grad).scatter_(dim, indices, grad)
 
+        def index_select(self,
+                         dim: int,
+                         indices):
+            output = torch.index_select(self, dim, indices)
+            self_size = self.size()
+
+            def backward(grad_output):
+                grad_self = AD_index_select_backward(grad_output, dim, indices, self_size, True)
+                return grad_self, None, None
+
+            return output, backward
         # def topk(self,
         #          k: int,
         #          dim: int = -1,
