@@ -4188,6 +4188,47 @@ class TestCudaFuser(JitTestCase):
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,
                      "Requires fusion optimization pass to be effective")
+    def test_index_select_function(self):
+        def t(x: torch.Tensor, y: torch.Tensor, ind: torch.Tensor):
+            o = torch.mul(x, y)
+            o = torch.index_select(o, 0, ind)
+            return o
+
+        x = torch.randn([68, 128], dtype=torch.float, device="cuda").requires_grad_()
+        y = torch.randn_like(x).requires_grad_()
+        ind = torch.randint(0, 68, (130,), device="cuda").to(dtype=torch.int)
+        grad = torch.randn([130, 128], dtype=torch.float, device="cuda")
+
+        ref_x = x.detach().requires_grad_()
+        ref_y = y.detach().requires_grad_()
+        o = t(ref_x, ref_y, ind)
+        o.backward(grad)
+
+        t_jit = torch.jit.script(t)
+        jit_o = t_jit(x, y, ind)
+        jit_o.backward(grad)
+        jit_o = t_jit(x, y, ind)
+        jit_o.backward(grad)
+        jit_o = t_jit(x, y, ind)
+        jit_o.backward(grad)
+        x.grad.zero_()
+        y.grad.zero_()
+        jit_o = t_jit(x, y, ind)
+        jit_o.backward(grad)
+        self.assertEqual(ref_x.grad, x.grad)
+        self.assertEqual(ref_y.grad, y.grad)
+        self.assertTrue(self._compare("comparing output failed", o, jit_o, 1e-5))
+        self.assertGraphContainsExactly(t_jit.graph_for(x, y, ind), FUSION_GUARD, 1, consider_subgraphs=True)
+
+        bwd_graph = list(
+            list(t_jit.get_debug_state().execution_plans.values())[
+                0].code.grad_executor_states()[0].execution_plans.values()
+        )[0].graph
+        FileCheck().check(FUSION_GUARD).run(bwd_graph)
+
+    @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,
+                     "Requires fusion optimization pass to be effective")
     def test_index_select_runtime_dim(self):
         lookup_size = 68
         feat_dim = 128
