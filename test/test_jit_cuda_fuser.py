@@ -218,20 +218,32 @@ class TestCudaFuser(JitTestCase):
         self.assertGraphContainsExactly(jit_op.graph_for(*args), FUSION_GUARD, num_fusion, consider_subgraphs=True)
 
     def _run_training_helper(self, jit_op, op, grads, *args):
+        def has_grad(x):
+            if torch.is_tensor(x) and x.requires_grad:
+                if x.grad is not None:
+                    return True
+            return False
+        # save *args for the reference run and warm up
+        ref_args = [t.detach().clone().requires_grad_() if has_grad(t) else t for t in args]
+        for i in range(3):
+            torch.cuda.manual_seed_all(123)
+            jit_o = jit_op(*args)
+            jit_g = jit_o.backward(grads)
+        # zero grads for checking gradients
+        [t.grad.zero_() for t in args if has_grad(t)]
         torch.cuda.manual_seed_all(123)
         jit_o = jit_op(*args)
         jit_g = jit_o.backward(grads)
+
         torch.cuda.manual_seed_all(123)
-        jit_o = jit_op(*args)
-        jit_g = jit_o.backward(grads)
-        torch.cuda.manual_seed_all(123)
-        jit_o = jit_op(*args)
-        jit_g = jit_o.backward(grads)
-        torch.cuda.manual_seed_all(123)
-        o = op(*args)
+        o = op(*ref_args)
         g = o.backward(grads)
         self.assertEqual(o, jit_o)
         self.assertEqual(g, jit_g)
+        # check gradients
+        for (t, ref_t) in zip(args, ref_args):
+            if has_grad(t):
+                self.assertEqual(ref_t.grad, t.grad)
         self.assertGraphContainsExactly(jit_op.graph_for(*args), FUSION_GUARD, 1, consider_subgraphs=True)
         bwd_graph = list(
             list(jit_op.get_debug_state().execution_plans.values())[
@@ -4199,32 +4211,8 @@ class TestCudaFuser(JitTestCase):
         ind = torch.randint(0, 68, (130,), device="cuda").to(dtype=torch.int)
         grad = torch.randn([130, 128], dtype=torch.float, device="cuda")
 
-        ref_x = x.detach().requires_grad_()
-        ref_y = y.detach().requires_grad_()
-        o = t(ref_x, ref_y, ind)
-        o.backward(grad)
-
         t_jit = torch.jit.script(t)
-        jit_o = t_jit(x, y, ind)
-        jit_o.backward(grad)
-        jit_o = t_jit(x, y, ind)
-        jit_o.backward(grad)
-        jit_o = t_jit(x, y, ind)
-        jit_o.backward(grad)
-        x.grad.zero_()
-        y.grad.zero_()
-        jit_o = t_jit(x, y, ind)
-        jit_o.backward(grad)
-        self.assertEqual(ref_x.grad, x.grad)
-        self.assertEqual(ref_y.grad, y.grad)
-        self.assertTrue(self._compare("comparing output failed", o, jit_o, 1e-5))
-        self.assertGraphContainsExactly(t_jit.graph_for(x, y, ind), FUSION_GUARD, 1, consider_subgraphs=True)
-
-        bwd_graph = list(
-            list(t_jit.get_debug_state().execution_plans.values())[
-                0].code.grad_executor_states()[0].execution_plans.values()
-        )[0].graph
-        FileCheck().check(FUSION_GUARD).run(bwd_graph)
+        self._run_training_helper(t_jit, t, grad, x, y, ind)
 
     @unittest.skipIf(not RUN_NVFUSER, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING,

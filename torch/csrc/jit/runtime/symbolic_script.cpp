@@ -229,7 +229,7 @@ const std::vector<std::string> functions = {
             self_size = self.size()
 
             def backward(grad_output):
-                grad_self = torch.zeros_like(self, memory_format=1).index_add_(dim, index, grad_output)
+                grad_self = torch.zeros_like(self, memory_format=1).index_add(dim, index, grad_output)
                 return grad_self, None, None
 
             return output, backward
